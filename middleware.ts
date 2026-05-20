@@ -107,13 +107,38 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
     return unauthenticated(req, true); // clear the bad cookie on the way out
   }
 
-  // ── Future RBAC plug-in point ─────────────────────────────────────────────
-  // The token's role/sub are now trusted (signature + iss + aud + exp checked).
-  // Phase 2D will add per-prefix rules here, e.g.:
-  //   if (pathname.startsWith('/dashboard/admin') && verified.payload.role !== 'admin')
-  //     return forbidden(req);
-  // Privilege ranking is in ROLE_RANK (src/features/auth/constants.ts).
-  // ──────────────────────────────────────────────────────────────────────────
+  // ── Role extraction (verified, trustworthy at the Edge) ───────────────────
+  // The token signature + iss + aud + exp have been checked. `role` and `sub`
+  // are now trustworthy WITHOUT a DB round-trip — useful for cheap per-prefix
+  // gating below.
+  const role = verified.payload.role; // 'admin' | 'manager' | 'sales'
+  void role; // currently unused at the Edge — see RBAC notes below.
+
+  // ── Future RBAC route-group gating ────────────────────────────────────────
+  // Phase 2D intentionally does NOT enforce role at the Edge. Authoritative
+  // enforcement lives Node-side, where it can ALSO re-read the user's CURRENT
+  // role/is_active (the JWT is point-in-time):
+  //   - server components / pages → src/lib/permissions/server.ts
+  //                                 (requireRole / requireMinimumRole)
+  //   - API route handlers        → src/lib/auth/session.ts (requireSession)
+  //                                 + predicates in src/lib/permissions
+  //
+  // When a hot path needs sub-millisecond gate-out (no Node bounce), add an
+  // edge rule HERE, sourced from a single route map. Sketch:
+  //
+  //   import { ROLE_RANK } from '@/src/features/auth/constants';
+  //   const EDGE_RBAC: ReadonlyArray<{ prefix: string; minRank: number }> = [
+  //     { prefix: '/dashboard/admin', minRank: ROLE_RANK.admin },
+  //     { prefix: '/api/admin',       minRank: ROLE_RANK.admin },
+  //   ];
+  //   const rule = EDGE_RBAC.find(r => pathname.startsWith(r.prefix));
+  //   if (rule && ROLE_RANK[role] < rule.minRank) return forbidden(req);
+  //
+  // ── Branch-scoped RBAC (foundation) ───────────────────────────────────────
+  // The JWT carries role but NOT allowed_branches (kept off the wire so the
+  // cookie stays small and so revoking a branch takes effect immediately).
+  // Branch checks therefore stay on the Node side via canAccessBranch() in
+  // src/lib/permissions, which reads the freshly-loaded SessionUser.
 
   return NextResponse.next();
 }

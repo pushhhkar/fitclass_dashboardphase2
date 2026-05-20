@@ -23,6 +23,13 @@ export interface SessionUser {
   email: string;
   role: UserRole;
   name: string | null;
+  /**
+   * Branch scopes for non-admin users (sheet/tab names). An EMPTY array means
+   * unrestricted — admins are always unrestricted regardless of this field.
+   * This is the foundation for branch-scoped RBAC; `canAccessBranch` in
+   * src/lib/permissions/index.ts is the only place that interprets it today.
+   */
+  allowed_branches: string[];
 }
 
 /** Credentials submitted to the (future) login endpoint. */

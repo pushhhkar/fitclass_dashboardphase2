@@ -17,6 +17,7 @@ export function toSessionUser(row: DatabaseUser): SessionUser {
     email: row.email,
     role: row.role,
     name: row.name,
+    allowed_branches: row.allowed_branches,
   };
 }
 
