@@ -30,6 +30,12 @@ export interface SessionUser {
    * src/lib/permissions/index.ts is the only place that interprets it today.
    */
   allowed_branches: string[];
+  /**
+   * Whether the user's account is enabled. Always `true` for the CURRENT
+   * authenticated session (inactive users cannot log in), but may be `false`
+   * for OTHER users surfaced via admin endpoints like GET /api/users.
+   */
+  is_active: boolean;
 }
 
 /** Credentials submitted to the (future) login endpoint. */

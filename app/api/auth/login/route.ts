@@ -22,6 +22,10 @@ import { comparePassword } from '@/src/lib/auth/password';
 import { signJwt } from '@/src/lib/auth/jwt';
 import { toSessionUser } from '@/src/features/users/serializers';
 import { sessionCookieFor } from '@/src/lib/auth/cookies';
+import {
+  logLoginFailure,
+  logLoginSuccess,
+} from '@/src/features/activities/mutations';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,19 +46,29 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const parsed = loginSchema.safeParse(raw);
   if (!parsed.success) {
     // Same generic message — don't reveal which field failed validation.
+    // Audit helper never throws, so it can't break the response.
+    const candidateEmail =
+      typeof (raw as { email?: unknown })?.email === 'string'
+        ? ((raw as { email: string }).email)
+        : '';
+    await logLoginFailure(candidateEmail, 'invalid_input');
     return fail();
   }
   const { email, password } = parsed.data;
 
   const user = await getUserByEmail(email);
-  if (!user || !user.is_active) {
-    // TODO(Phase 2D): record activities row { action_type: 'login_failure', ... }
+  if (!user) {
+    await logLoginFailure(email, 'unknown_email');
+    return fail();
+  }
+  if (!user.is_active) {
+    await logLoginFailure(email, 'inactive_user', user.id);
     return fail();
   }
 
   const ok = await comparePassword(password, user.password_hash);
   if (!ok) {
-    // TODO(Phase 2D): record activities row { action_type: 'login_failure', ... }
+    await logLoginFailure(email, 'bad_password', user.id);
     return fail();
   }
 
@@ -68,6 +82,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const res = NextResponse.json({ user: session }, { status: 200 });
   res.cookies.set(sessionCookieFor(token));
 
-  // TODO(Phase 2D): record activities row { action_type: 'login_success', performed_by: user.id }
+  await logLoginSuccess(user.id);
   return res;
 }

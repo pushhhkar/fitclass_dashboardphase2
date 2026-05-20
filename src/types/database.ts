@@ -72,21 +72,31 @@ export interface AssignmentInsert {
   notes?: string | null;
 }
 
-/** A row of public.activities — append-only audit entry. */
+/**
+ * A row of public.activities — append-only audit entry.
+ *
+ * Post-Phase-2E shape (see migration 20260520000000):
+ *  - `lead_id` is null for non-lead events (auth, user mgmt, ...).
+ *  - `performed_by` is null when the actor is unknown (e.g. login_failure for
+ *    an unknown email).
+ *  - `subject_user_id` is the target user for user-management events.
+ */
 export interface Activity {
   id: string;
-  lead_id: string;
+  lead_id: string | null;
   action_type: string;
   old_value: JsonValue | null;
   new_value: JsonValue | null;
-  performed_by: string;
+  performed_by: string | null;
+  subject_user_id: string | null;
   created_at: string;
 }
 
 export interface ActivityInsert {
-  lead_id: string;
   action_type: string;
+  lead_id?: string | null;
   old_value?: JsonValue | null;
   new_value?: JsonValue | null;
-  performed_by: string;
+  performed_by?: string | null;
+  subject_user_id?: string | null;
 }

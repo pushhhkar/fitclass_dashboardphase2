@@ -1,0 +1,178 @@
+'use client';
+
+/**
+ * Searchable / filterable list of users for the admin surface.
+ *
+ * - Client-side search + role/status filters (the dataset is small; no
+ *   pagination needed yet).
+ * - Each row's Edit button bubbles the row up to the parent (`UsersClient`)
+ *   which mounts the edit modal — keeps modal state in ONE place.
+ * - The "current admin" row is annotated as (you) so it's easy to spot the
+ *   self-protection rules in the modal.
+ */
+import { useMemo, useState } from 'react';
+import type { SessionUser, UserRole } from '@/src/types/auth';
+import { RoleBadge } from '@/components/dashboard/RoleBadge';
+import UserStatusBadge from './UserStatusBadge';
+
+interface Props {
+  users: SessionUser[];
+  currentUserId: string;
+  onEdit: (user: SessionUser) => void;
+}
+
+type StatusFilter = 'all' | 'active' | 'inactive';
+type RoleFilter = 'all' | UserRole;
+
+export default function UsersTable({ users, currentUserId, onEdit }: Props) {
+  const [search, setSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState<RoleFilter>('all');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return users.filter((u) => {
+      if (statusFilter === 'active' && !u.is_active) return false;
+      if (statusFilter === 'inactive' && u.is_active) return false;
+      if (roleFilter !== 'all' && u.role !== roleFilter) return false;
+      if (q) {
+        const hay = `${u.email} ${u.name ?? ''}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [users, search, roleFilter, statusFilter]);
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-[#E2E8F0] bg-white shadow-sm">
+      {/* Filter bar */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-[#F1F5F9] p-3 sm:p-4">
+        <input
+          type="search"
+          placeholder="Search by name or email…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="min-w-[200px] flex-1 rounded-lg border border-[#E2E8F0] bg-white px-3 py-1.5 text-sm text-[#0F172A] shadow-sm focus:border-[#0b6cbf] focus:outline-none focus:ring-2 focus:ring-[#0b6cbf]/20"
+        />
+        <select
+          value={roleFilter}
+          onChange={(e) => setRoleFilter(e.target.value as RoleFilter)}
+          className="rounded-lg border border-[#E2E8F0] bg-white px-2 py-1.5 text-xs font-semibold text-[#475569] shadow-sm focus:border-[#0b6cbf] focus:outline-none focus:ring-2 focus:ring-[#0b6cbf]/20"
+        >
+          <option value="all">All roles</option>
+          <option value="admin">Admin</option>
+          <option value="manager">Manager</option>
+          <option value="sales">Sales</option>
+        </select>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+          className="rounded-lg border border-[#E2E8F0] bg-white px-2 py-1.5 text-xs font-semibold text-[#475569] shadow-sm focus:border-[#0b6cbf] focus:outline-none focus:ring-2 focus:ring-[#0b6cbf]/20"
+        >
+          <option value="all">All statuses</option>
+          <option value="active">Active only</option>
+          <option value="inactive">Inactive only</option>
+        </select>
+        <span className="ml-auto text-xs text-[#64748B]">
+          {filtered.length} of {users.length}
+        </span>
+      </div>
+
+      {/* Table — responsive: real table on md+, stacked card list on mobile */}
+      <div className="hidden md:block">
+        <table className="w-full text-sm">
+          <thead className="bg-[#F8FAFC] text-left text-[11px] font-semibold uppercase tracking-wide text-[#64748B]">
+            <tr>
+              <th className="px-4 py-2.5">Name</th>
+              <th className="px-4 py-2.5">Email</th>
+              <th className="px-4 py-2.5">Role</th>
+              <th className="px-4 py-2.5">Status</th>
+              <th className="px-4 py-2.5">Branches</th>
+              <th className="px-4 py-2.5 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#F1F5F9]">
+            {filtered.map((u) => (
+              <tr key={u.id} className="text-[#0F172A]">
+                <td className="px-4 py-2.5">
+                  {u.name ?? '—'}
+                  {u.id === currentUserId && (
+                    <span className="ml-2 text-[10px] font-semibold uppercase text-[#0b6cbf]">
+                      (you)
+                    </span>
+                  )}
+                </td>
+                <td className="px-4 py-2.5 text-[#475569]">{u.email}</td>
+                <td className="px-4 py-2.5"><RoleBadge role={u.role} /></td>
+                <td className="px-4 py-2.5"><UserStatusBadge active={u.is_active} /></td>
+                <td className="px-4 py-2.5 text-xs text-[#475569]">
+                  {u.allowed_branches.length === 0 ? (
+                    <span className="italic text-[#94A3B8]">All</span>
+                  ) : (
+                    u.allowed_branches.join(', ')
+                  )}
+                </td>
+                <td className="px-4 py-2.5 text-right">
+                  <button
+                    type="button"
+                    onClick={() => onEdit(u)}
+                    className="rounded-lg border border-[#E2E8F0] bg-white px-3 py-1 text-xs font-semibold text-[#475569] hover:bg-[#F8FAFC]"
+                  >
+                    Edit
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {filtered.length === 0 && (
+              <tr>
+                <td colSpan={6} className="px-4 py-8 text-center text-xs text-[#64748B]">
+                  No users match the filters.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Mobile cards */}
+      <ul className="divide-y divide-[#F1F5F9] md:hidden">
+        {filtered.map((u) => (
+          <li key={u.id} className="space-y-2 p-4">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-[#0F172A]">
+                  {u.name ?? '—'}
+                  {u.id === currentUserId && (
+                    <span className="ml-2 text-[10px] font-semibold uppercase text-[#0b6cbf]">(you)</span>
+                  )}
+                </p>
+                <p className="truncate text-xs text-[#475569]">{u.email}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => onEdit(u)}
+                className="shrink-0 rounded-lg border border-[#E2E8F0] bg-white px-3 py-1 text-xs font-semibold text-[#475569]"
+              >
+                Edit
+              </button>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <RoleBadge role={u.role} />
+              <UserStatusBadge active={u.is_active} />
+              {u.allowed_branches.length === 0 ? (
+                <span className="text-[11px] italic text-[#94A3B8]">All branches</span>
+              ) : (
+                <span className="text-[11px] text-[#475569]">{u.allowed_branches.join(', ')}</span>
+              )}
+            </div>
+          </li>
+        ))}
+        {filtered.length === 0 && (
+          <li className="px-4 py-8 text-center text-xs text-[#64748B]">
+            No users match the filters.
+          </li>
+        )}
+      </ul>
+    </div>
+  );
+}
