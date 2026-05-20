@@ -1,0 +1,155 @@
+@import "tailwindcss";
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: #F8FAFC;
+  color: #0F172A;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Dashboard layout shell ──────────────────────────────────────────────────
+   Rigid flex column filling the viewport. Each child is shrink-0 (fixed)
+   except .dashboard-grid-region which takes all remaining height.
+   On mobile (<768px) the shell becomes scrollable and cards flow naturally.
+*/
+.dashboard-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;        /* fills the <main> which is 100dvh */
+  overflow: hidden;    /* no page scroll on desktop */
+  background: #F8FAFC;
+  min-width: 0;
+}
+
+/* Fixed-height chrome items */
+.dashboard-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 20px;
+  background: #fff;
+  border-bottom: 1px solid #F1F5F9;
+  flex-shrink: 0;
+}
+
+/* Grid region: takes ALL remaining vertical space */
+.dashboard-grid-region {
+  flex: 1 1 0;
+  min-height: 0;          /* critical — lets flex child shrink below content size */
+  display: flex;
+  flex-direction: column;
+  padding: 10px 20px 12px;
+  overflow: hidden;
+}
+
+/* White card that wraps the grid — fills the region exactly */
+.dashboard-grid-card {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border: 1px solid #E2E8F0;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  overflow: hidden;       /* clips the grid to rounded corners */
+}
+
+/* Mobile: restore natural document scroll */
+@media (max-width: 767px) {
+  .dashboard-root {
+    height: auto;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+  .dashboard-toolbar {
+    position: sticky;
+    top: 48px;   /* below navbar (h-12 = 48px on mobile) */
+    z-index: 20;
+    flex-direction: column;
+    align-items: stretch;
+    padding: 7px 16px;
+  }
+  .dashboard-grid-region {
+    flex: none;
+    padding: 0;
+    overflow: visible;
+  }
+  .dashboard-grid-card {
+    flex: none;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    background: transparent;
+    overflow: visible;
+  }
+}
+
+/* ── AG Grid wrapper ─────────────────────────────────────────────────────────
+   overflow:hidden clips rows to the card's rounded corners.
+   The grid itself manages scroll via alwaysShowHorizontalScroll /
+   alwaysShowVerticalScroll props — single scroll context, no double bars.
+*/
+.ag-root-wrapper {
+  flex: 1 1 0;
+  min-height: 0;
+  border: none !important;
+  overflow: hidden;
+  border-radius: 0 0 12px 12px;
+}
+
+/* ── AG Grid scrollbar styling ───────────────────────────────────────────────
+   Scoped inside GRID_STYLES in LeadsTable.tsx (injected via <style> tag).
+   Rules here are a fallback for global cascade.
+*/
+
+/* ── New lead flash animation ────────────────────────────────────────────── */
+@keyframes new-lead-flash {
+  0%   { background-color: #DBEAFE; }
+  60%  { background-color: #DBEAFE; }
+  100% { background-color: transparent; }
+}
+.ag-row.new-lead-row {
+  animation: new-lead-flash 3s ease-out forwards;
+}
+
+/* ── Mobile bottom-sheet ─────────────────────────────────────────────────── */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .mobile-sheet-safe {
+    padding-bottom: calc(env(safe-area-inset-bottom) + 1rem);
+  }
+}
+
+/* Bottom sheet content scrollbar */
+.sheet-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #b8c2d1 #eef2f7;
+}
+.sheet-scroll::-webkit-scrollbar       { width: 8px; }
+.sheet-scroll::-webkit-scrollbar-track { background: #eef2f7; border-radius: 999px; }
+.sheet-scroll::-webkit-scrollbar-thumb { background: #b8c2d1; border-radius: 999px; }
+.sheet-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* ── Utility ─────────────────────────────────────────────────────────────── */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+
+/* Branch tab strip */
+.tabs-scrollbar {
+  overflow-x: scroll;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: #b8c2d1 #eef2f7;
+}
+.tabs-scrollbar::-webkit-scrollbar       { height: 8px; }
+.tabs-scrollbar::-webkit-scrollbar-track { background: #eef2f7; border-radius: 999px; }
+.tabs-scrollbar::-webkit-scrollbar-thumb { background: #b8c2d1; border-radius: 999px; }
+.tabs-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
