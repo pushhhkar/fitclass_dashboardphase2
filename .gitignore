@@ -32,6 +32,8 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...except the env template, which IS meant to be tracked.
+!.env.local.example
 
 # vercel
 .vercel
@@ -42,3 +44,11 @@ next-env.d.ts
 
 # claude
 CLAUDE.md
+
+# sensitive — credential files accidentally saved to disk
+*service-account*.json
+*credentials*.json
+*.key
+
+# backups (may contain copies of secret files like .env.local)
+*.bak
