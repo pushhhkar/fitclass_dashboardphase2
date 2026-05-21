@@ -36,6 +36,7 @@ import {
   logUserUpdated,
   sanitizeUserForAudit,
 } from '@/src/features/activities/mutations';
+import { validateBranches } from '@/src/features/branches/queries';
 
 export const dynamic = 'force-dynamic';
 
@@ -68,6 +69,21 @@ export async function PATCH(
     );
   }
   const patch = parsed.data;
+
+  // Defence-in-depth: validate the new branch list against the canonical
+  // Sheets-derived names. Only runs when the patch actually mutates branches.
+  if (patch.allowed_branches !== undefined) {
+    const branchCheck = await validateBranches(patch.allowed_branches);
+    if (!branchCheck.ok) {
+      return NextResponse.json(
+        {
+          error: 'Some branches do not exist in the CRM',
+          invalid_branches: branchCheck.invalid,
+        },
+        { status: 400 },
+      );
+    }
+  }
 
   const target = await getUserById(id);
   if (!target) {

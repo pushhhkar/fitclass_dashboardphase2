@@ -30,6 +30,7 @@ import {
   sanitizeUserForAudit,
 } from '@/src/features/activities/mutations';
 import { isDatabaseError } from '@/src/lib/db/errors';
+import { validateBranches } from '@/src/features/branches/queries';
 
 export const dynamic = 'force-dynamic';
 
@@ -61,6 +62,21 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
   const input = parsed.data;
+
+  // Defence-in-depth: the UI sources branches from /api/branches/all, but a
+  // crafted request could still POST an invalid string. Reject anything that
+  // is not in the canonical Sheets-derived list so `canAccessLeadBranch`
+  // never has to deal with non-existent tab names.
+  const branchCheck = await validateBranches(input.allowed_branches);
+  if (!branchCheck.ok) {
+    return NextResponse.json(
+      {
+        error: 'Some branches do not exist in the CRM',
+        invalid_branches: branchCheck.invalid,
+      },
+      { status: 400 },
+    );
+  }
 
   // Pre-check email to return a friendly 409 (also covers a unique-violation
   // race below as a safety net).

@@ -20,7 +20,10 @@ export const ACTIVITY_ACTIONS = [
   'user_password_reset',
   // ── Lead operations (Phase 2E+) ───────────────────────────────────────────
   'assignment_created',
+  'assignment_reassigned',
+  'assignment_removed',
   'status_change',
+  'lead_transferred',
 ] as const;
 
 export type ActivityAction = (typeof ACTIVITY_ACTIONS)[number];

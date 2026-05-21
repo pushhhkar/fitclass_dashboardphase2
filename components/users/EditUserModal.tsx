@@ -13,7 +13,7 @@ import { useRouter } from 'next/navigation';
 import type { SessionUser, UserRole } from '@/src/types/auth';
 import Modal from './Modal';
 import RoleSelector from './RoleSelector';
-import BranchSelector from './BranchSelector';
+import BranchMultiSelect from './BranchMultiSelect';
 import TemporaryPasswordPanel from './TemporaryPasswordPanel';
 
 interface Props {
@@ -157,7 +157,7 @@ export default function EditUserModal({ open, onClose, user, currentUserId }: Pr
           </p>
         )}
 
-        <BranchSelector
+        <BranchMultiSelect
           id="edit-branches"
           value={allowedBranches}
           onChange={setAllowedBranches}

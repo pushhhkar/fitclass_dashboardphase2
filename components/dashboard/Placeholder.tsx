@@ -9,7 +9,9 @@ interface Props {
 
 export default function Placeholder({ title, body }: Props) {
   return (
-    <div className="mx-auto max-w-5xl space-y-4">
+    // Card-page padding (the dashboard `<main>` is padding-free so full-bleed
+    // pages like /dashboard/leads can claim every pixel).
+    <div className="mx-auto w-full max-w-5xl space-y-4 p-4 sm:p-6">
       <header className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-[#0F172A]">{title}</h1>
       </header>

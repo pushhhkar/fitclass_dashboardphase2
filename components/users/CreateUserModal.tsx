@@ -9,7 +9,7 @@ import { useRouter } from 'next/navigation';
 import type { UserRole } from '@/src/types/auth';
 import Modal from './Modal';
 import RoleSelector from './RoleSelector';
-import BranchSelector from './BranchSelector';
+import BranchMultiSelect from './BranchMultiSelect';
 import TemporaryPasswordPanel from './TemporaryPasswordPanel';
 
 interface Props {
@@ -123,7 +123,7 @@ export default function CreateUserModal({ open, onClose }: Props) {
             autoComplete="off"
           />
           <RoleSelector id="new-user-role" value={role} onChange={setRole} disabled={pending} />
-          <BranchSelector
+          <BranchMultiSelect
             id="new-user-branches"
             value={allowedBranches}
             onChange={setAllowedBranches}

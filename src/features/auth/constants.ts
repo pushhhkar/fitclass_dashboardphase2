@@ -50,15 +50,29 @@ export const AUTH_ROUTES = {
   /** Where to send users after logout. */
   afterLogout: '/login',
   /** Where to send users after successful login. */
-  afterLogin: '/dashboard',
+  afterLogin: '/dashboard/leads',
 } as const;
 
 /** Path prefixes that require a valid session (pages + APIs). */
 export const PROTECTED_PREFIXES = ['/dashboard', '/api'] as const;
 
 /**
+ * EXACT paths that require a valid session — used for routes that cannot be
+ * expressed as a prefix without accidentally swallowing every other route.
+ *
+ * `/` belongs here: it is a session-aware redirect (server-only), but the
+ * middleware enforces auth at the Edge so an unauthenticated client never
+ * reaches the page at all. This is the second layer of defence behind
+ * `app/page.tsx` itself — if anything ever causes that page redirect to
+ * fail in production (stale build, transient session-lookup error), the
+ * Edge gate still bounces the request to /login. There is no production
+ * scenario in which the root URL serves CRM content publicly.
+ */
+export const PROTECTED_EXACT_PATHS = ['/'] as const;
+
+/**
  * Paths that must stay publicly reachable even when unauthenticated.
- * `/api/auth` is reserved now for the future login/logout endpoints so the
- * middleware never deadlocks the sign-in flow.
+ * `/api/auth/*` covers the login / logout / me endpoints so the middleware
+ * never deadlocks the sign-in flow.
  */
 export const PUBLIC_PATHS = ['/login', '/api/auth'] as const;

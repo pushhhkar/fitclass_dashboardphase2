@@ -55,10 +55,12 @@ export interface DatabaseUserUpdate {
   is_active?: boolean;
 }
 
-/** A row of public.assignments. lead_id is the external Google-Sheets key. */
+/** A row of public.assignments. lead_id is the canonical Sheets-row key. */
 export interface Assignment {
   id: string;
   lead_id: string;
+  /** Denormalised sheet/tab name = branch. Powers branch-scoped authz. */
+  branch: string;
   assigned_to: string;
   assigned_by: string;
   assigned_at: string;
@@ -67,8 +69,15 @@ export interface Assignment {
 
 export interface AssignmentInsert {
   lead_id: string;
+  branch: string;
   assigned_to: string;
   assigned_by: string;
+  notes?: string | null;
+}
+
+export interface AssignmentUpdate {
+  assigned_to?: string;
+  assigned_by?: string;
   notes?: string | null;
 }
 

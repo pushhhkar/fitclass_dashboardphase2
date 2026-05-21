@@ -11,7 +11,7 @@ import type {
 import { AllCommunityModule, ModuleRegistry } from 'ag-grid-community';
 import type { Lead, UpdatePayload } from '@/types';
 import type { DynamicBranch } from '@/hooks/useBranches';
-import type { CardFilter } from './Dashboard';
+import type { CardFilter } from './dashboard/LeadDashboardShell';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 

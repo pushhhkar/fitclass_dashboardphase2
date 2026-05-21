@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { Lead, StatsData } from '@/types';
-import type { CardFilter } from './Dashboard';
+import type { CardFilter } from './dashboard/LeadDashboardShell';
 
 function useRelativeTime(date: Date | null): string {
   const [label, setLabel] = useState('');

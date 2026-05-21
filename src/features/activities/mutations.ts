@@ -200,6 +200,32 @@ export function logAssignmentCreated(
   });
 }
 
+export function logAssignmentReassigned(
+  actorId: string,
+  leadId: string,
+  before: JsonValue,
+  after: JsonValue,
+): Promise<void> {
+  return log('assignment_reassigned', {
+    performedBy: actorId,
+    leadId,
+    oldValue: before,
+    newValue: after,
+  });
+}
+
+export function logAssignmentRemoved(
+  actorId: string,
+  leadId: string,
+  details: JsonValue,
+): Promise<void> {
+  return log('assignment_removed', {
+    performedBy: actorId,
+    leadId,
+    oldValue: details,
+  });
+}
+
 export function logStatusChange(
   actorId: string,
   leadId: string,
@@ -211,5 +237,19 @@ export function logStatusChange(
     leadId,
     oldValue: before,
     newValue: after,
+  });
+}
+
+export function logLeadTransferred(
+  actorId: string,
+  leadId: string,
+  fromBranch: string,
+  toBranch: string,
+): Promise<void> {
+  return log('lead_transferred', {
+    performedBy: actorId,
+    leadId,
+    oldValue: { branch: fromBranch },
+    newValue: { branch: toBranch },
   });
 }

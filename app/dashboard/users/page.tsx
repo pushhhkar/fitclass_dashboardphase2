@@ -24,7 +24,10 @@ export default async function UsersPage() {
   const users = toSessionUsers(rows);
 
   return (
-    <div className="mx-auto max-w-6xl">
+    // The dashboard `<main>` is padding-free (so full-bleed surfaces like
+    // /dashboard/leads can claim every pixel). "Card" pages like this one
+    // own their own gutter via `p-4 sm:p-6`.
+    <div className="mx-auto w-full max-w-6xl p-4 sm:p-6">
       <UsersClient users={users} currentUserId={admin.id} />
     </div>
   );
