@@ -17,6 +17,7 @@ import type {
   AssignmentInsert,
   AssignmentUpdate,
 } from '@/src/types/database';
+import type { AssignmentRowWithAssignee } from './serializers';
 import {
   logAssignmentCreated,
   logAssignmentReassigned,
@@ -25,6 +26,17 @@ import {
 
 const ASSIGNMENTS_TABLE = 'assignments';
 
+// Phase 2U: mutation responses also embed the assignee — the API route
+// passes the result straight into `toAssignmentView` which expects the
+// joined shape, and the picker UI displays the assignee name immediately
+// after a successful POST/PATCH without waiting for a refetch.
+const SELECT_WITH_ASSIGNEE = '*, assignee:users!assigned_to(name, email)';
+
+function asJoined(row: unknown): AssignmentRowWithAssignee {
+  return row as AssignmentRowWithAssignee;
+}
+// Audit snapshots only need the bare DB fields (no assignee embed); kept
+// separate so log payloads stay stable across UI changes.
 function asAssignment(row: unknown): Assignment {
   return row as Assignment;
 }
@@ -42,7 +54,9 @@ interface AssignLeadInput {
  * an owner, the DB unique index throws (caller surfaces 409 + suggests
  * `reassignLead` instead).
  */
-export async function assignLead(input: AssignLeadInput): Promise<Assignment> {
+export async function assignLead(
+  input: AssignLeadInput,
+): Promise<AssignmentRowWithAssignee> {
   const payload: AssignmentInsert = {
     lead_id: input.leadId,
     branch: input.branch,
@@ -54,11 +68,11 @@ export async function assignLead(input: AssignLeadInput): Promise<Assignment> {
   const { data, error } = await supabaseAdmin
     .from(ASSIGNMENTS_TABLE)
     .insert(payload)
-    .select('*')
+    .select(SELECT_WITH_ASSIGNEE)
     .single();
 
   if (error) throw fromPostgrestError(error);
-  const row = asAssignment(data);
+  const row = asJoined(data);
 
   await logAssignmentCreated(input.assignedBy, input.leadId, {
     assignment_id: row.id,
@@ -85,8 +99,10 @@ interface ReassignInput {
  * same `id`) so other tables / future references stay stable. The previous
  * owner is captured in the audit row's `old_value`.
  */
-export async function reassignLead(input: ReassignInput): Promise<Assignment> {
-  // Read the current row so we can record a clean before/after snapshot.
+export async function reassignLead(
+  input: ReassignInput,
+): Promise<AssignmentRowWithAssignee> {
+  // Read the current row (bare shape; only needed for the audit snapshot).
   const { data: existingRow, error: readErr } = await supabaseAdmin
     .from(ASSIGNMENTS_TABLE)
     .select('*')
@@ -106,11 +122,11 @@ export async function reassignLead(input: ReassignInput): Promise<Assignment> {
     .from(ASSIGNMENTS_TABLE)
     .update(patch)
     .eq('id', input.id)
-    .select('*')
+    .select(SELECT_WITH_ASSIGNEE)
     .single();
 
   if (error) throw fromPostgrestError(error);
-  const after = asAssignment(data);
+  const after = asJoined(data);
 
   await logAssignmentReassigned(
     input.actorId,

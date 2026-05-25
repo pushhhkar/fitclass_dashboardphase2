@@ -16,6 +16,8 @@ import LeadDashboardShell from '@/components/dashboard/LeadDashboardShell';
 export const dynamic = 'force-dynamic';
 
 export default async function LeadsPage() {
-  await requireSessionPage('/dashboard/leads');
-  return <LeadDashboardShell />;
+  // Capture the verified actor so the shell can pass it into the inline
+  // assignment selector (drives "can I assign?" + filtered candidate fetch).
+  const actor = await requireSessionPage('/dashboard/leads');
+  return <LeadDashboardShell actor={actor} />;
 }

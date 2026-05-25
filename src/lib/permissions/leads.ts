@@ -42,6 +42,23 @@ function isOwner(user: SessionUser, lead: LeadContext): boolean {
  *  - manager → in allowed branch
  *  - sales   → in allowed branch AND assigned to them
  */
+/**
+ * Visibility matrix (Phase 2R — owner-restriction applies to sales_executive
+ * ONLY, NOT to the whole sales tier):
+ *
+ *   admin                  → all leads, all branches
+ *   manager                → all leads in their assigned branches
+ *   senior_sales_executive → all leads in their assigned branches
+ *                            (SSE is the operational lead distributor —
+ *                             they need branch-wide visibility to know what
+ *                             to assign to sales_executives)
+ *   sales_executive        → leads in their branch AND assigned to them
+ *
+ * NOTE: the previous version used `isSalesRole(user.role)` to scope ownership,
+ * which incorrectly grouped SSE with SE and made SSE see an empty dashboard
+ * unless leads happened to be assigned to themselves. SSE is a team lead, not
+ * a lead recipient — owner check is reserved for the operational role only.
+ */
 export function canViewLeadData(
   user: SessionUser | null | undefined,
   lead: LeadContext,
@@ -49,9 +66,11 @@ export function canViewLeadData(
   if (!user) return false;
   if (user.role === 'admin') return true;
   if (!canAccessLeadBranch(user, lead.branch)) return false;
-  if (user.role === 'manager') return true;
-  // sales
-  return isOwner(user, lead);
+  if (user.role === 'manager' || user.role === 'senior_sales_executive') {
+    return true;
+  }
+  if (user.role === 'sales_executive') return isOwner(user, lead);
+  return false;
 }
 
 /**
@@ -91,9 +110,15 @@ export function canTransferLead(
 
 /**
  * Can the user create/change/remove the assignment for this lead?
- *  - admin   → any branch
- *  - manager → only within their allowed branches
- *  - sales   → never
+ *  - admin                    → any branch (oversight)
+ *  - senior_sales_executive   → only within their allowed branches (operational)
+ *  - manager                  → never (Phase 2M: managers do SHEET assignments)
+ *  - sales_executive          → never
+ *
+ * NOTE: this is the BRANCH-AUTHORITY check ("can the actor touch this lead's
+ * assignment row at all?"). The TARGET-role check ("can the actor route to
+ * THIS specific user?") lives in `canAssignToUser` and runs as a second
+ * gate inside the API handlers. Both must pass.
  */
 export function canAssignLeadWithinBranch(
   user: SessionUser | null | undefined,
@@ -101,6 +126,8 @@ export function canAssignLeadWithinBranch(
 ): boolean {
   if (!user) return false;
   if (user.role === 'admin') return true;
-  if (user.role !== 'manager') return false;
-  return canAccessLeadBranch(user, lead.branch);
+  if (user.role === 'senior_sales_executive') {
+    return canAccessLeadBranch(user, lead.branch);
+  }
+  return false;
 }

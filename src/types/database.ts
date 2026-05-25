@@ -109,3 +109,24 @@ export interface ActivityInsert {
   performed_by?: string | null;
   subject_user_id?: string | null;
 }
+
+/**
+ * A row of public.sheet_assignments — branch (sheet) ownership granted
+ * by an admin to a manager, or by a manager to a senior_sales_executive.
+ * Distinct from `Assignment` (lead-level ownership).
+ */
+export interface SheetAssignment {
+  id: string;
+  branch: string;
+  user_id: string;
+  assigned_by: string | null;
+  assigned_at: string;
+  notes: string | null;
+}
+
+export interface SheetAssignmentInsert {
+  branch: string;
+  user_id: string;
+  assigned_by?: string | null;
+  notes?: string | null;
+}

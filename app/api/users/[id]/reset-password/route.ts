@@ -1,20 +1,29 @@
 /**
- * POST /api/users/[id]/reset-password — admin-only.
+ * POST /api/users/[id]/reset-password — manager+ (Phase 2H hierarchy).
  *
  * Generates a fresh temporary password, stores its bcrypt hash on the user,
- * and returns the plaintext ONCE for the admin to hand off out-of-band.
+ * and returns the plaintext ONCE for the actor to hand off out-of-band.
+ *
+ * Role-authority: the actor must be allowed to "create" the target's current
+ * role (`canCreateUser`). A manager can reset passwords for sales-tier users
+ * but never for admins or other managers — preventing a hostile manager
+ * from locking out a peer/superior.
  *
  * Future hardening: pair this with a "must_change_password" flag and force
- * the user through a change-password flow on first login (Phase 2F+).
+ * the user through a change-password flow on first login.
  */
 import { NextResponse, type NextRequest } from 'next/server';
-import { requireRoleApi } from '@/src/lib/permissions/api';
+import { requireMinimumRoleApi } from '@/src/lib/permissions/api';
+import { canCreateUser } from '@/src/lib/permissions';
 import { resetPasswordSchema } from '@/src/features/users/validators';
 import { updateUser } from '@/src/features/users/mutations';
 import { getUserById } from '@/src/features/users/queries';
 import { hashPassword } from '@/src/lib/auth/password';
 import { generateTemporaryPassword } from '@/src/features/users/password-gen';
-import { logUserPasswordReset } from '@/src/features/activities/mutations';
+import {
+  logPrivilegeDeniedAttempt,
+  logUserPasswordReset,
+} from '@/src/features/activities/mutations';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,7 +35,7 @@ export async function POST(
   req: NextRequest,
   ctx: RouteContext,
 ): Promise<NextResponse> {
-  const gate = await requireRoleApi('admin');
+  const gate = await requireMinimumRoleApi('senior_sales_executive');
   if (!gate.ok) return gate.response;
   const actor = gate.session;
 
@@ -37,7 +46,6 @@ export async function POST(
   try {
     raw = await req.json();
   } catch {
-    // Empty body is fine — treat as {} for the strict schema.
     raw = {};
   }
   const parsed = resetPasswordSchema.safeParse(raw);
@@ -51,6 +59,19 @@ export async function POST(
   const target = await getUserById(id);
   if (!target) {
     return NextResponse.json({ error: 'User not found' }, { status: 404 });
+  }
+
+  // Role-authority gate — same as edit. Reject up-front so a manager can
+  // never reset an admin's or another manager's credentials.
+  if (!canCreateUser(actor.role, target.role)) {
+    await logPrivilegeDeniedAttempt(actor.id, 'reset_user_password', {
+      target_id: target.id,
+      target_current_role: target.role,
+    });
+    return NextResponse.json(
+      { error: 'You are not allowed to reset this user\'s password' },
+      { status: 403 },
+    );
   }
 
   const temporaryPassword = generateTemporaryPassword();

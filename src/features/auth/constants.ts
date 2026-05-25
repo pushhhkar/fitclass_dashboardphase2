@@ -6,28 +6,65 @@
  */
 
 /**
- * Canonical role list. ORDER MATTERS: index ascends with privilege, so a
- * future RBAC layer can do hierarchical checks (e.g. `rank(role) >= rank(min)`)
+ * Canonical role list. ORDER MATTERS: index ascends with privilege, so the
+ * RBAC layer can do hierarchical checks (`ROLE_RANK[role] >= ROLE_RANK[min]`)
  * without a separate mapping. Add new roles here and `UserRole` updates
  * automatically via `typeof ROLES[number]`.
+ *
+ * The two "sales" roles split the field-operator tier:
+ *  - sales_executive         → individual contributor handling leads
+ *  - senior_sales_executive  → higher-rank IC; may absorb leads from juniors
+ *  - manager                 → owns a branch; routes work to sales tier
+ *  - admin                   → platform; routes anything anywhere
+ *
+ * NOTE on the DB enum: PostgreSQL keeps the legacy `'sales'` value in
+ * `user_role` because enum values cannot be safely DROP'd. Existing rows
+ * are migrated to `'sales_executive'` (see migration 20260522…) and the
+ * app stops emitting the legacy name. JWTs minted before the migration
+ * carry `role: 'sales'` and will fail `isUserRole(...)` on verify, forcing
+ * the user to log in again — by design.
  */
-export const ROLES = ['sales', 'manager', 'admin'] as const;
+export const ROLES = [
+  'sales_executive',
+  'senior_sales_executive',
+  'manager',
+  'admin',
+] as const;
 
 export const ROLE = {
   ADMIN: 'admin',
   MANAGER: 'manager',
-  SALES: 'sales',
+  SENIOR_SALES_EXECUTIVE: 'senior_sales_executive',
+  SALES_EXECUTIVE: 'sales_executive',
 } as const;
 
-/** Privilege rank for future hierarchical RBAC checks (higher = more power). */
+/** Privilege rank — higher = more power. */
 export const ROLE_RANK: Record<(typeof ROLES)[number], number> = {
-  sales: 0,
-  manager: 1,
-  admin: 2,
+  sales_executive: 0,
+  senior_sales_executive: 1,
+  manager: 2,
+  admin: 3,
+};
+
+/** Human labels for any place that renders a role to a user. */
+export const ROLE_LABELS: Record<(typeof ROLES)[number], string> = {
+  sales_executive: 'Sales Executive',
+  senior_sales_executive: 'Senior Sales Executive',
+  manager: 'Manager',
+  admin: 'Admin',
 };
 
 /** Default role assigned to a freshly-created user until changed by an admin. */
-export const DEFAULT_ROLE = ROLE.SALES;
+export const DEFAULT_ROLE = ROLE.SALES_EXECUTIVE;
+
+/**
+ * True for any role in the "sales" tier. Centralised so future role splits
+ * (e.g. trainee_sales_executive) only need updating in one place. All other
+ * permission code branches via this helper instead of literal-string checks.
+ */
+export function isSalesRole(role: (typeof ROLES)[number]): boolean {
+  return role === 'sales_executive' || role === 'senior_sales_executive';
+}
 
 // ── JWT / session ───────────────────────────────────────────────────────────
 /** Token lifetime, as a `jsonwebtoken` expiresIn string. */

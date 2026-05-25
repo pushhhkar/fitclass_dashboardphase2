@@ -1,33 +1,45 @@
 /**
  * POST /api/assignments — create a new assignment for a lead that has none.
  *
- * Authorization (server-authoritative):
- *  - Caller must be admin or manager (sales has no assign rights).
- *  - Manager must have branch access to the lead's branch (`canAssignLeadWithinBranch`).
- *  - Target user must exist and be active.
- *  - Manager cannot assign across branches — both actor AND target user must
- *    have access to the same branch (a manager who has only ["A"] in their
- *    scope cannot assign a lead in branch "A" to a sales user whose scope is
- *    ["B"]). This prevents managers from leaking leads outside their reach.
+ * Authorization (server-authoritative, Phase 2I):
+ *  - Caller must be admin, manager, OR senior_sales_executive.
+ *    (sales_executive has no assign rights at all.)
+ *  - `canAssignLeadWithinBranch` enforces the BRANCH authority — admin
+ *    bypasses, manager/SSE need the branch in their `allowed_branches`.
+ *  - `canAssignToUser(actor.role, target.role)` enforces the TARGET-role
+ *    routing rule:
+ *      admin   → anyone
+ *      manager → sales tier (senior_sales_executive + sales_executive)
+ *      SSE     → sales_executive ONLY (cannot assign to a peer SSE)
+ *      SE      → nobody (already filtered by the role-gate above)
+ *  - For non-admin actors, the target user must share branch scope so a
+ *    mid-tier user can't leak leads outside their territory.
  *
- *  All gates are server-side. Frontend hiding (sidebar nav) is UX only.
+ *  All gates are server-side. Frontend hiding (sidebar / picker) is UX only.
+ *  Every denial path emits a `privilege_denied_attempt` audit row.
  */
 import { NextResponse, type NextRequest } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import { requireMinimumRoleApi } from '@/src/lib/permissions/api';
 import { canAssignLeadWithinBranch } from '@/src/lib/permissions/leads';
-import { canAccessLeadBranch } from '@/src/lib/permissions/branches';
-import { canAssignToUser } from '@/src/lib/permissions/assignments';
+import {
+  canAssignLeadToBranch,
+  canAssignToUser,
+} from '@/src/lib/permissions/assignments';
 import { createAssignmentSchema } from '@/src/features/assignments/validators';
 import { assignLead } from '@/src/features/assignments/mutations';
 import { toAssignmentView } from '@/src/features/assignments/serializers';
 import { getUserById } from '@/src/features/users/queries';
 import { toSessionUser } from '@/src/features/users/serializers';
 import { isDatabaseError } from '@/src/lib/db/errors';
+import { logPrivilegeDeniedAttempt } from '@/src/features/activities/mutations';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const gate = await requireMinimumRoleApi('manager');
+  // Lowest role that has ANY assign authority is senior_sales_executive
+  // (per ROLE_RANK). The fine-grained matrix runs below.
+  const gate = await requireMinimumRoleApi('senior_sales_executive');
   if (!gate.ok) return gate.response;
   const actor = gate.session;
 
@@ -47,13 +59,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
   const input = parsed.data;
 
-  // Actor must be allowed to assign within this lead's branch.
+  // Branch authority: must be admin OR in-branch manager/SSE.
   if (!canAssignLeadWithinBranch(actor, { branch: input.branch })) {
+    await logPrivilegeDeniedAttempt(actor.id, 'assign_lead_branch', {
+      lead_id: input.lead_id,
+      branch: input.branch,
+    });
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  // Resolve the target user. Must exist + active + (if non-admin actor) share
-  // branch scope so a manager can't leak leads outside their territory.
+  // Resolve target.
   const targetRow = await getUserById(input.assigned_to);
   if (!targetRow || !targetRow.is_active) {
     return NextResponse.json(
@@ -63,21 +78,47 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
   const target = toSessionUser(targetRow);
 
-  // Role-routing rule (PRIVILEGE-ESCALATION GUARD).
-  // The frontend already filters the picker per `canAssignToUser`, but that
-  // is UX only — a crafted POST could still try to escalate by assigning
-  // a lead to an admin/manager. Reject those here, server-side, as the
-  // authoritative gate.
-  if (!canAssignToUser(actor.role, target.role)) {
-    return NextResponse.json(
-      { error: 'You cannot assign leads to a user with that role' },
-      { status: 403 },
-    );
+  // ── PRIVILEGE-ESCALATION GUARD (target-role routing + Phase 2L rules) ───
+  // Blocks: (a) admin target (admins are not operational assignees),
+  //         (b) self-assignment (actor.id === target.id),
+  //         (c) upward / sideways role routing.
+  // The picker UI hides those options but the API never trusts the UI.
+  if (!canAssignToUser(actor.role, target.role, actor.id, target.id)) {
+    const reason: string =
+      target.role === 'admin'
+        ? 'admin_target'
+        : actor.id === target.id
+          ? 'self_assignment'
+          : 'role_routing';
+    await logPrivilegeDeniedAttempt(actor.id, 'assign_lead_target_role', {
+      reason,
+      lead_id: input.lead_id,
+      target_id: target.id,
+      target_role: target.role,
+    });
+    const message =
+      reason === 'admin_target'
+        ? 'Admin users cannot be lead assignees'
+        : reason === 'self_assignment'
+          ? 'You cannot assign a lead to yourself'
+          : 'You cannot assign leads to a user with that role';
+    return NextResponse.json({ error: message }, { status: 403 });
   }
 
-  if (actor.role !== 'admin' && !canAccessLeadBranch(target, input.branch)) {
+  // ── BRANCH INTEGRITY (Phase 2K) ─────────────────────────────────────────
+  // Applies to EVERY actor including admin. An assignee who can't access
+  // the lead's branch would silently fail their own canViewLeadData check
+  // and the lead would be invisible to its supposed owner — a ghost
+  // assignment. The rule has nothing to do with who is assigning.
+  if (!canAssignLeadToBranch(target, input.branch)) {
+    await logPrivilegeDeniedAttempt(actor.id, 'assign_lead_branch_scope', {
+      lead_id: input.lead_id,
+      branch: input.branch,
+      target_id: target.id,
+      target_branches: target.allowed_branches,
+    });
     return NextResponse.json(
-      { error: 'Target user is not scoped to this branch' },
+      { error: 'Target user is not scoped to this lead\'s branch' },
       { status: 403 },
     );
   }
@@ -90,6 +131,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       assignedBy: actor.id,
       notes: input.notes ?? null,
     });
+    // Invalidate the assignments page's router cache so a subsequent
+    // navigation there shows the freshly-created row — this is what makes
+    // the inline create visible on /dashboard/assignments without the
+    // user needing a hard refresh.
+    revalidatePath('/dashboard/assignments');
     return NextResponse.json(
       { assignment: toAssignmentView(created) },
       { status: 201 },

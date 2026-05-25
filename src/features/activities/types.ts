@@ -18,12 +18,17 @@ export const ACTIVITY_ACTIONS = [
   'user_deactivated',
   'user_reactivated',
   'user_password_reset',
+  'role_changed',
+  'privilege_denied_attempt',
   // ── Lead operations (Phase 2E+) ───────────────────────────────────────────
   'assignment_created',
   'assignment_reassigned',
   'assignment_removed',
   'status_change',
   'lead_transferred',
+  // ── Sheet ownership (Phase 2M) ────────────────────────────────────────────
+  'sheet_assigned',
+  'sheet_unassigned',
 ] as const;
 
 export type ActivityAction = (typeof ACTIVITY_ACTIONS)[number];

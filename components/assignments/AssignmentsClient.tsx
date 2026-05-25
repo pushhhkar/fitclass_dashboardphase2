@@ -22,21 +22,18 @@ export default function AssignmentsClient({ actor, assignments, candidates }: Pr
   const [editing, setEditing] = useState<AssignmentView | null>(null);
   const [search, setSearch] = useState('');
 
-  const candidatesById = useMemo(() => {
-    const m = new Map<string, SessionUser>();
-    for (const u of candidates) m.set(u.id, u);
-    return m;
-  }, [candidates]);
-
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return assignments;
     return assignments.filter((a) => {
-      const owner = candidatesById.get(a.assigned_to);
-      const hay = `${a.lead_id} ${a.branch} ${owner?.email ?? ''} ${owner?.name ?? ''}`.toLowerCase();
+      // Use the denormalised assignee fields baked into the row server-side
+      // (Phase 2U). Falling back through `candidatesById` is no longer
+      // necessary because the row carries name/email regardless of whether
+      // the assignee is also in the current actor's candidate list.
+      const hay = `${a.lead_id} ${a.branch} ${a.assignee_email ?? ''} ${a.assignee_name ?? ''}`.toLowerCase();
       return hay.includes(q);
     });
-  }, [assignments, search, candidatesById]);
+  }, [assignments, search]);
 
   return (
     <div className="space-y-4">
@@ -88,7 +85,13 @@ export default function AssignmentsClient({ actor, assignments, candidates }: Pr
                   <td className="px-4 py-2.5 font-mono text-xs">{a.lead_id}</td>
                   <td className="px-4 py-2.5 text-[#475569]">{a.branch}</td>
                   <td className="px-4 py-2.5">
-                    <AssigneeBadge user={candidatesById.get(a.assigned_to) ?? null} />
+                    <AssigneeBadge
+                      user={
+                        a.assignee_name !== null || a.assignee_email !== null
+                          ? { name: a.assignee_name, email: a.assignee_email ?? '' }
+                          : null
+                      }
+                    />
                   </td>
                   <td className="px-4 py-2.5 text-xs text-[#64748B]">
                     {new Date(a.assigned_at).toLocaleString()}
@@ -133,7 +136,13 @@ export default function AssignmentsClient({ actor, assignments, candidates }: Pr
                 </button>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <AssigneeBadge user={candidatesById.get(a.assigned_to) ?? null} />
+                <AssigneeBadge
+                      user={
+                        a.assignee_name !== null || a.assignee_email !== null
+                          ? { name: a.assignee_name, email: a.assignee_email ?? '' }
+                          : null
+                      }
+                    />
                 <span className="text-[11px] text-[#94A3B8]">
                   {new Date(a.assigned_at).toLocaleString()}
                 </span>

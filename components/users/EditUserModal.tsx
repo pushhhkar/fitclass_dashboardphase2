@@ -20,11 +20,19 @@ interface Props {
   open: boolean;
   onClose: () => void;
   user: SessionUser;
-  /** id of the admin performing the edit; disables self-lockout controls. */
+  /** id of the actor performing the edit; disables self-lockout controls. */
   currentUserId: string;
+  /** role of the actor; drives the role-dropdown filter. */
+  actorRole: UserRole;
 }
 
-export default function EditUserModal({ open, onClose, user, currentUserId }: Props) {
+export default function EditUserModal({
+  open,
+  onClose,
+  user,
+  currentUserId,
+  actorRole,
+}: Props) {
   const router = useRouter();
   const [name, setName] = useState(user.name ?? '');
   const [role, setRole] = useState<UserRole>(user.role);
@@ -150,7 +158,13 @@ export default function EditUserModal({ open, onClose, user, currentUserId }: Pr
           />
         </div>
 
-        <RoleSelector id="edit-role" value={role} onChange={setRole} disabled={locked || isSelf} />
+        <RoleSelector
+          id="edit-role"
+          value={role}
+          onChange={setRole}
+          actorRole={actorRole}
+          disabled={locked || isSelf}
+        />
         {isSelf && (
           <p className="-mt-2 text-[11px] text-[#64748B]">
             You can't change your own role (server enforces this too).

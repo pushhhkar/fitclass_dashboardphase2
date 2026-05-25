@@ -1,72 +1,81 @@
 /**
  * Assignment READ layer. SERVER-ONLY (supabaseAdmin, RLS-bypass).
  *
+ * Phase 2U: every SELECT embeds the assignee user via the PostgREST
+ * `users!assigned_to(name, email)` syntax — ONE SQL join, no N+1, and
+ * the UI never has to fall back to displaying the raw `assigned_to`
+ * UUID when an assignee isn't in the caller's candidate list.
+ *
  * The batch variant `getAssignmentsByLeadIds` is the workhorse: the leads
- * route fetches the rows from Google Sheets, then asks this module for the
- * matching assignments in ONE query and joins them in memory. No N+1.
+ * route fetches rows from Google Sheets, then asks this module for the
+ * matching assignments + their assignees in ONE round-trip.
  */
 import { supabaseAdmin } from '@/src/lib/db/supabase';
 import { fromPostgrestError } from '@/src/lib/db/errors';
 import type { Assignment } from '@/src/types/database';
+import type { AssignmentRowWithAssignee } from './serializers';
 
 const ASSIGNMENTS_TABLE = 'assignments';
 
-function asAssignment(row: unknown): Assignment {
-  return row as Assignment;
+// PostgREST embed expression. Reads as: "select all assignment columns,
+// plus a nested object called `assignee` populated from the users table
+// via the foreign-key column `assigned_to`, projecting only `name` and
+// `email`." Supabase resolves the FK by column-name reference.
+const SELECT_WITH_ASSIGNEE = '*, assignee:users!assigned_to(name, email)';
+
+function asJoined(row: unknown): AssignmentRowWithAssignee {
+  return row as AssignmentRowWithAssignee;
 }
-function asAssignments(rows: unknown): Assignment[] {
-  return (rows as Assignment[] | null) ?? [];
+function asJoinedMany(rows: unknown): AssignmentRowWithAssignee[] {
+  return (rows as AssignmentRowWithAssignee[] | null) ?? [];
 }
 
 /** Single assignment by lead. Null when the lead has no current owner. */
 export async function getLeadAssignment(
   leadId: string,
-): Promise<Assignment | null> {
+): Promise<AssignmentRowWithAssignee | null> {
   const { data, error } = await supabaseAdmin
     .from(ASSIGNMENTS_TABLE)
-    .select('*')
+    .select(SELECT_WITH_ASSIGNEE)
     .eq('lead_id', leadId)
     .maybeSingle();
 
   if (error) throw fromPostgrestError(error);
-  return data ? asAssignment(data) : null;
+  return data ? asJoined(data) : null;
 }
 
 /** Single assignment by primary key. */
 export async function getAssignmentById(
   id: string,
-): Promise<Assignment | null> {
+): Promise<AssignmentRowWithAssignee | null> {
   const { data, error } = await supabaseAdmin
     .from(ASSIGNMENTS_TABLE)
-    .select('*')
+    .select(SELECT_WITH_ASSIGNEE)
     .eq('id', id)
     .maybeSingle();
 
   if (error) throw fromPostgrestError(error);
-  return data ? asAssignment(data) : null;
+  return data ? asJoined(data) : null;
 }
 
 /**
- * Batch fetch. Returns a Map<lead_id, Assignment> for fast lookup when
- * enriching a Sheets-derived list of leads.
- *
- * `lead_ids` length is capped on the caller side; Supabase's `.in()` accepts
- * sensible array sizes but extremely large arrays should be chunked. For a
- * typical branch sheet (< 5k rows) one query is fine.
+ * Batch fetch with embedded assignee. Returns a Map<lead_id, row>.
+ * `lead_ids` length is capped on the caller side; Supabase's `.in()`
+ * accepts sensible sizes — a typical branch sheet (< 5k rows) is fine.
  */
 export async function getAssignmentsByLeadIds(
   leadIds: readonly string[],
-): Promise<Map<string, Assignment>> {
+): Promise<Map<string, AssignmentRowWithAssignee>> {
   if (leadIds.length === 0) return new Map();
 
   const { data, error } = await supabaseAdmin
     .from(ASSIGNMENTS_TABLE)
-    .select('*')
+    .select(SELECT_WITH_ASSIGNEE)
     .in('lead_id', leadIds);
 
   if (error) throw fromPostgrestError(error);
-  const rows = asAssignments(data);
-  const map = new Map<string, Assignment>();
+  const rows = asJoinedMany(data);
+  const map = new Map<string, AssignmentRowWithAssignee>();
   for (const row of rows) map.set(row.lead_id, row);
   return map;
 }
@@ -74,53 +83,79 @@ export async function getAssignmentsByLeadIds(
 /** All assignments currently owned by a given user (newest first). */
 export async function getAssignmentsForUser(
   userId: string,
-): Promise<Assignment[]> {
+): Promise<AssignmentRowWithAssignee[]> {
   const { data, error } = await supabaseAdmin
     .from(ASSIGNMENTS_TABLE)
-    .select('*')
+    .select(SELECT_WITH_ASSIGNEE)
     .eq('assigned_to', userId)
     .order('assigned_at', { ascending: false });
 
   if (error) throw fromPostgrestError(error);
-  return asAssignments(data);
+  return asJoinedMany(data);
+}
+
+/**
+ * Distinct branches in which a user holds at least one assignment.
+ *
+ * Powers the sales_executive branch-tab list — for SEs, "branches they can
+ * see" is derived from actual ownership, NOT from `users.allowed_branches`.
+ * Single-column projection; no JOIN needed here.
+ */
+export async function getDistinctBranchesForUser(
+  userId: string,
+): Promise<string[]> {
+  const { data, error } = await supabaseAdmin
+    .from(ASSIGNMENTS_TABLE)
+    .select('branch')
+    .eq('assigned_to', userId);
+  if (error) throw fromPostgrestError(error);
+  const rows = (data as { branch: string }[] | null) ?? [];
+  const set = new Set<string>();
+  for (const row of rows) set.add(row.branch);
+  return Array.from(set).sort((a, b) => a.localeCompare(b));
 }
 
 /** All assignments inside a branch (manager scope). */
 export async function getAssignmentsForBranch(
   branch: string,
-): Promise<Assignment[]> {
+): Promise<AssignmentRowWithAssignee[]> {
   const { data, error } = await supabaseAdmin
     .from(ASSIGNMENTS_TABLE)
-    .select('*')
+    .select(SELECT_WITH_ASSIGNEE)
     .eq('branch', branch)
     .order('assigned_at', { ascending: false });
 
   if (error) throw fromPostgrestError(error);
-  return asAssignments(data);
+  return asJoinedMany(data);
 }
 
 /** All assignments across a set of branches (manager with multiple scopes). */
 export async function getAssignmentsForBranches(
   branches: readonly string[],
-): Promise<Assignment[]> {
+): Promise<AssignmentRowWithAssignee[]> {
   if (branches.length === 0) return [];
   const { data, error } = await supabaseAdmin
     .from(ASSIGNMENTS_TABLE)
-    .select('*')
+    .select(SELECT_WITH_ASSIGNEE)
     .in('branch', branches)
     .order('assigned_at', { ascending: false });
 
   if (error) throw fromPostgrestError(error);
-  return asAssignments(data);
+  return asJoinedMany(data);
 }
 
 /** All assignments — admin scope only; never call from a manager surface. */
-export async function listAllAssignments(): Promise<Assignment[]> {
+export async function listAllAssignments(): Promise<AssignmentRowWithAssignee[]> {
   const { data, error } = await supabaseAdmin
     .from(ASSIGNMENTS_TABLE)
-    .select('*')
+    .select(SELECT_WITH_ASSIGNEE)
     .order('assigned_at', { ascending: false });
 
   if (error) throw fromPostgrestError(error);
-  return asAssignments(data);
+  return asJoinedMany(data);
 }
+
+// `Assignment` re-exported for callers that need the bare DB shape (none
+// in current code, but kept available in case a future caller wants the
+// un-joined record).
+export type { Assignment };

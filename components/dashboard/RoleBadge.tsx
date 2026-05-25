@@ -1,18 +1,18 @@
 /**
  * Small chip showing a user's role. Pure presentation — safe in any runtime.
+ *
+ * Labels come from the canonical `ROLE_LABELS` in
+ * `src/features/auth/constants` so renaming a role in one place updates
+ * every badge in the app.
  */
+import { ROLE_LABELS } from '@/src/features/auth/constants';
 import type { UserRole } from '@/src/types/auth';
 
 const ROLE_STYLES: Record<UserRole, string> = {
-  admin:   'bg-violet-50 text-violet-700 border-violet-200',
-  manager: 'bg-blue-50 text-blue-700 border-blue-200',
-  sales:   'bg-emerald-50 text-emerald-700 border-emerald-200',
-};
-
-const ROLE_LABELS: Record<UserRole, string> = {
-  admin:   'Admin',
-  manager: 'Manager',
-  sales:   'Sales',
+  admin:                  'bg-violet-50 text-violet-700 border-violet-200',
+  manager:                'bg-blue-50 text-blue-700 border-blue-200',
+  senior_sales_executive: 'bg-teal-50 text-teal-700 border-teal-200',
+  sales_executive:        'bg-emerald-50 text-emerald-700 border-emerald-200',
 };
 
 interface Props {

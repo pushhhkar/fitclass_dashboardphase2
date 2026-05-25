@@ -12,6 +12,10 @@ import { AllCommunityModule, ModuleRegistry } from 'ag-grid-community';
 import type { Lead, UpdatePayload } from '@/types';
 import type { DynamicBranch } from '@/hooks/useBranches';
 import type { CardFilter } from './dashboard/LeadDashboardShell';
+import type { SessionUser } from '@/src/types/auth';
+import type { AssignmentView } from '@/src/features/assignments/serializers';
+import { makeLeadId } from '@/src/features/assignments/lead-id';
+import InlineAssignmentSelector from './assignments/InlineAssignmentSelector';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -41,6 +45,19 @@ interface Props {
   newLeadRowKeys: Set<string>;
   headers: string[];       // live Row 1 headers — drives column order and names
   statusOptions: string[];
+  /** Current authenticated actor — drives the inline assignment picker. */
+  actor: SessionUser;
+  /** Per-row assignment map keyed by `lead.rowIndex`. */
+  assignments: Record<number, AssignmentView>;
+  /**
+   * Pre-fetched candidate users for the inline picker. Owned by the shell —
+   * one fetch per (branch, actor), shared across every row's selector. Empty
+   * when the actor has no inline-assign authority OR before the first fetch
+   * completes.
+   */
+  assignmentCandidates: SessionUser[];
+  /** Called after an inline assignment mutation succeeds (refetch trigger). */
+  onAssignmentChanged: () => void;
 }
 
 // ── Breakpoint hook ───────────────────────────────────────────────────────────
@@ -377,9 +394,20 @@ interface CardProps {
   statusOptions: string[];
   onUpdate: (payload: Omit<UpdatePayload, 'dashboardId' | 'sheetName'>) => Promise<void>;
   onTransfer: (lead: Lead, targetSheetName: string) => Promise<void>;
+  // Inline assignment (Phase 2J): same surface area as the desktop AG-Grid
+  // cell, just rendered as a header chip on the card.
+  actor: SessionUser;
+  dashboardId: string;
+  assignment: AssignmentView | null;
+  /** Shared candidate list from the shell (one fetch per branch). */
+  assignmentCandidates: SessionUser[];
+  onAssignmentChanged: () => void;
 }
 
-function MobileLeadCard({ lead, isNew, headers, allBranches, activeBranchName, statusOptions, onUpdate, onTransfer }: CardProps) {
+function MobileLeadCard({
+  lead, isNew, headers, allBranches, activeBranchName, statusOptions, onUpdate, onTransfer,
+  actor, dashboardId, assignment, assignmentCandidates, onAssignmentChanged,
+}: CardProps) {
   const hasHeader = (name: string) => headers.includes(name);
   // Use the actual header label for address-like column
   const branchLabel = hasHeader('Selected Branch') ? 'Selected Branch' : 'Address';
@@ -416,6 +444,22 @@ function MobileLeadCard({ lead, isNew, headers, allBranches, activeBranchName, s
         <div className="shrink-0 pt-0.5">
           <MobileStatusPicker lead={lead} options={statusOptions} onUpdate={onUpdate} />
         </div>
+      </div>
+
+      {/* Inline assignment (Phase 2J) — same selector as the desktop AG-Grid
+          cell. Read-only badge for actors without assign authority. */}
+      <div className="px-4 pb-2 flex items-center gap-2">
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-[#94A3B8]">
+          Assignee
+        </span>
+        <InlineAssignmentSelector
+          branch={activeBranchName}
+          leadId={makeLeadId(dashboardId, activeBranchName, lead.rowIndex)}
+          existing={assignment}
+          actor={actor}
+          candidates={assignmentCandidates}
+          onChanged={onAssignmentChanged}
+        />
       </div>
 
       <div className="h-px bg-[#F1F5F9] mx-4" />
@@ -722,6 +766,7 @@ export default function LeadsTable({
   allBranches, activeBranchName,
   newLeadRowKeys, headers, statusOptions,
   onUpdate, onTransfer,
+  actor, assignments, assignmentCandidates, onAssignmentChanged,
 }: Props) {
   const gridRef = useRef<AgGridReact>(null);
   const [savingRow, setSavingRow] = useState<number | null>(null);
@@ -737,16 +782,95 @@ export default function LeadsTable({
     return leads.filter(l => set.has(l.Status ?? ''));
   }, [leads, statusFilter]);
 
-  const columnDefs = useMemo(
-    () => buildDynamicColumns(headers, allBranches, activeBranchName, onTransfer, resolvedOptions),
-    [headers, allBranches, activeBranchName, onTransfer, resolvedOptions]
+  // ── Assignee cell (Phase 2J: inline assignment) ────────────────────────
+  // The cell reads its data from AG Grid's `context` so we never have to
+  // rebuild `columnDefs` when the assignments map changes — we just call
+  // `refreshCells({ columns: ['__assignee'] })` in the useEffect below.
+  const assigneeCellRenderer = useCallback(
+    (params: ICellRendererParams<Lead>) => {
+      const lead = params.data;
+      if (!lead) return null;
+      const ctx = params.context as {
+        actor: SessionUser;
+        assignments: Record<number, AssignmentView>;
+        assignmentCandidates: SessionUser[];
+        dashboardId: string;
+        branch: string;
+        onAssignmentChanged: () => void;
+      };
+      const existing = ctx.assignments[lead.rowIndex] ?? null;
+      return (
+        <InlineAssignmentSelector
+          branch={ctx.branch}
+          leadId={makeLeadId(ctx.dashboardId, ctx.branch, lead.rowIndex)}
+          existing={existing}
+          actor={ctx.actor}
+          candidates={ctx.assignmentCandidates}
+          onChanged={ctx.onAssignmentChanged}
+        />
+      );
+    },
+    [],
   );
+
+  const columnDefs = useMemo(() => {
+    const dynamic = buildDynamicColumns(
+      headers,
+      allBranches,
+      activeBranchName,
+      onTransfer,
+      resolvedOptions,
+    );
+    const assignee: ColDef<Lead> = {
+      colId: '__assignee',
+      headerName: 'Assignee',
+      width: 200,
+      minWidth: 160,
+      pinned: 'right',
+      sortable: false,
+      filter: false,
+      editable: false,
+      cellRenderer: assigneeCellRenderer,
+      cellStyle: {
+        display: 'flex',
+        alignItems: 'center',
+        paddingLeft: '12px',
+        paddingRight: '12px',
+        overflow: 'visible', // popover is portaled — avoid clipping the trigger
+      },
+    };
+    return [...dynamic, assignee];
+  }, [headers, allBranches, activeBranchName, onTransfer, resolvedOptions, assigneeCellRenderer]);
 
   const defaultColDef: ColDef = useMemo(() => ({
     resizable: true,
     suppressMovable: false,
     cellStyle: { fontSize: '13px', color: '#0F172A' },
   }), []);
+
+  // AG Grid `context` is the cheap channel for non-row data the cell renderer
+  // needs (actor identity, assignments lookup, dashboard/branch identity, and
+  // the refetch callback). Bumping context is a single re-render trigger.
+  const gridContext = useMemo(
+    () => ({
+      actor,
+      assignments,
+      assignmentCandidates,
+      dashboardId,
+      branch: activeBranchName,
+      onAssignmentChanged,
+    }),
+    [actor, assignments, assignmentCandidates, dashboardId, activeBranchName, onAssignmentChanged],
+  );
+
+  // Refresh JUST the assignee cells when the underlying map OR the shared
+  // candidate list changes — the rest of the table stays untouched.
+  useEffect(() => {
+    gridRef.current?.api?.refreshCells({
+      force: true,
+      columns: ['__assignee'],
+    });
+  }, [assignments, assignmentCandidates]);
 
   const onCellValueChanged = useCallback(async (event: CellValueChangedEvent<Lead>) => {
     const { data, colDef, newValue } = event;
@@ -821,6 +945,11 @@ export default function LeadsTable({
               statusOptions={resolvedOptions}
               onUpdate={onUpdate}
               onTransfer={onTransfer}
+              actor={actor}
+              dashboardId={dashboardId}
+              assignment={assignments[lead.rowIndex] ?? null}
+              assignmentCandidates={assignmentCandidates}
+              onAssignmentChanged={onAssignmentChanged}
             />
           );
         })}
@@ -851,6 +980,7 @@ export default function LeadsTable({
         rowData={filtered}
         columnDefs={columnDefs}
         defaultColDef={defaultColDef}
+        context={gridContext}
         onGridReady={onGridReady}
         onCellValueChanged={onCellValueChanged}
         pagination

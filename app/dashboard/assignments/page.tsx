@@ -1,11 +1,14 @@
 /**
- * /dashboard/assignments — manager+ (admins see everything).
+ * /dashboard/assignments — senior_sales_executive+ (Phase 2I).
  *
  * Server-rendered list of current assignments visible to the user, plus the
  * pool of users they can assign to. Both lists are filtered SERVER-SIDE:
  *  - Admins → all assignments + all active users.
- *  - Managers → only assignments whose `branch` is in their allowed_branches,
- *    plus active users that share at least one branch (or are unrestricted).
+ *  - Managers → assignments whose `branch` is in their allowed_branches,
+ *    plus active users they may route work to (sales tier in branch).
+ *  - Senior Sales Executives → assignments in their allowed_branches,
+ *    plus active Sales Executives in branch (`canAssignToUser` returns
+ *    true only for `sales_executive` when actor is SSE).
  *
  * The page revalidates on demand (`force-dynamic`) so router.refresh() inside
  * AssignLeadModal updates the table after any mutation.
@@ -25,7 +28,9 @@ import type { SessionUser } from '@/src/types/auth';
 export const dynamic = 'force-dynamic';
 
 export default async function AssignmentsPage() {
-  const actor = await requireMinimumRole('manager');
+  // Lowest role with ANY assign authority is senior_sales_executive; the
+  // fine-grained matrix runs below (and again server-side in the API).
+  const actor = await requireMinimumRole('senior_sales_executive');
 
   // Visible assignments
   const rows =
@@ -36,21 +41,23 @@ export default async function AssignmentsPage() {
 
   // ── Candidate assignees ────────────────────────────────────────────────
   // Two filters apply:
-  //   1. ROLE — `canAssignToUser(actor.role, target.role)` enforces the
-  //      privilege-routing rule (admin→anyone, manager→sales only).
+  //   1. ROLE / IDENTITY — `canAssignToUser(actor.role, u.role, actor.id, u.id)`
+  //      enforces the privilege-routing rule + admin-target ban + self-assign
+  //      ban. (Phase 2L: admins are non-operational; nobody self-assigns.)
   //   2. BRANCH — for non-admin actors, target must overlap a branch with
   //      the actor (or be unrestricted with empty allowed_branches).
   //
   // SECURITY NOTE: this list is UX, not the gate. The same predicates run
   // server-side in POST/PATCH /api/assignments — a crafted POST to assign
-  // to an admin will 403 even if the UI never shows that option.
+  // to an admin (or to yourself) will 403 even if the UI never shows that
+  // option.
   const allUsers = (await listUsers()).filter((u) => u.is_active);
   const candidates: SessionUser[] = allUsers
     .map(toSessionUser)
-    .filter((u) => canAssignToUser(actor.role, u.role))
+    .filter((u) => canAssignToUser(actor.role, u.role, actor.id, u.id))
     .filter((u) => {
       if (actor.role === 'admin') return true;
-      // manager: branch overlap (or target is unrestricted)
+      // manager / SSE: branch overlap (or target is unrestricted)
       return (
         u.allowed_branches.length === 0 ||
         u.allowed_branches.some((b) => actor.allowed_branches.includes(b))

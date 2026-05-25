@@ -1,23 +1,28 @@
 /**
- * /api/users — admin-only user management.
+ * /api/users — manager+ user management (Phase 2H hierarchy).
  *
- *   GET  → list users (newest first), serialised to SessionUser shape so
- *          password_hash never leaves the server.
+ *   GET  → list users (newest first), filtered to the rows the actor is
+ *          allowed to manage. Admin sees everyone; manager sees the sales
+ *          tier they could create / edit.
  *   POST → create a user; server generates a temporary password (returned
- *          ONCE in the response body for out-of-band sharing) and stores
- *          only its bcrypt hash. Logs `user_created` activity.
+ *          ONCE in the response body for out-of-band sharing).
  *
- * SECURITY:
- *  - `requireRoleApi('admin')` is the only gate that authorises this
- *    endpoint. Frontend hiding (sidebar nav) is UX only — anyone with a
- *    valid session can hit this URL with curl; only admins succeed.
- *  - Generic 409 on email conflict (no information leakage about who exists).
- *  - Password leaves the server exactly ONCE, in the create response. It is
- *    never logged, never written to the audit row (sanitiser strips it),
- *    and never retrievable again.
+ * SECURITY (defence-in-depth):
+ *  - `requireMinimumRoleApi('senior_sales_executive')` rejects sales_executive
+ *    up front (Phase 2M — SSE creates SEs, so they need user-mgmt access).
+ *  - `canCreateUser(actor.role, target.role)` enforces the role-routing rule
+ *    — admin can create any role, manager can only create sales-tier roles.
+ *    A crafted POST that tries to create another admin/manager is rejected
+ *    server-side with a 403, regardless of what the UI offered.
+ *  - The denied attempt is recorded via `logPrivilegeDeniedAttempt` so
+ *    operators can spot repeated probing.
+ *  - Branches are still validated against the canonical Sheets-derived list.
+ *  - Generic 409 on email conflict (no enumeration leak).
+ *  - Password leaves the server exactly ONCE in the create response.
  */
 import { NextResponse, type NextRequest } from 'next/server';
-import { requireRoleApi } from '@/src/lib/permissions/api';
+import { requireMinimumRoleApi } from '@/src/lib/permissions/api';
+import { canCreateUser, canViewUser } from '@/src/lib/permissions';
 import { adminCreateUserSchema } from '@/src/features/users/validators';
 import { createUser } from '@/src/features/users/mutations';
 import { listUsers, getUserByEmail } from '@/src/features/users/queries';
@@ -26,6 +31,7 @@ import { toSessionUser, toSessionUsers } from '@/src/features/users/serializers'
 import { hashPassword } from '@/src/lib/auth/password';
 import { generateTemporaryPassword } from '@/src/features/users/password-gen';
 import {
+  logPrivilegeDeniedAttempt,
   logUserCreated,
   sanitizeUserForAudit,
 } from '@/src/features/activities/mutations';
@@ -35,15 +41,30 @@ import { validateBranches } from '@/src/features/branches/queries';
 export const dynamic = 'force-dynamic';
 
 export async function GET(): Promise<NextResponse> {
-  const gate = await requireRoleApi('admin');
+  const gate = await requireMinimumRoleApi('senior_sales_executive');
   if (!gate.ok) return gate.response;
+  const actor = gate.session;
 
-  const users = await listUsers();
-  return NextResponse.json({ users: toSessionUsers(users) }, { status: 200 });
+  const rows = await listUsers();
+  // Phase 2P: visibility (canViewUser) is broader than edit authority
+  // (canCreateUser). A manager SEES all SSEs + SEs in their branches but
+  // can only EDIT SSEs. The UsersTable hides the Edit button per row
+  // using `canCreateUser` so the API and the UI stay aligned.
+  const visible = rows.filter((u) =>
+    canViewUser(actor, {
+      id: u.id,
+      role: u.role,
+      allowed_branches: u.allowed_branches,
+    }),
+  );
+  return NextResponse.json(
+    { users: toSessionUsers(visible) },
+    { status: 200 },
+  );
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const gate = await requireRoleApi('admin');
+  const gate = await requireMinimumRoleApi('senior_sales_executive');
   if (!gate.ok) return gate.response;
   const actor = gate.session;
 
@@ -62,6 +83,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
   const input = parsed.data;
+
+  // ── PRIVILEGE-ESCALATION GUARD ─────────────────────────────────────────
+  // Even though the UI hides forbidden role options, a manager could craft
+  // a POST with role='admin'. This is the authoritative reject.
+  if (!canCreateUser(actor.role, input.role)) {
+    await logPrivilegeDeniedAttempt(actor.id, 'create_user', {
+      attempted_role: input.role,
+      attempted_email: input.email,
+    });
+    return NextResponse.json(
+      { error: 'You are not allowed to create a user with that role' },
+      { status: 403 },
+    );
+  }
 
   // Defence-in-depth: the UI sources branches from /api/branches/all, but a
   // crafted request could still POST an invalid string. Reject anything that

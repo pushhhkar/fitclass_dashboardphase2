@@ -10,24 +10,39 @@
  * - The "current admin" row is annotated as (you) so it's easy to spot the
  *   self-protection rules in the modal.
  */
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import type { SessionUser, UserRole } from '@/src/types/auth';
+import { ROLES, ROLE_LABELS } from '@/src/features/auth/constants';
+import { canCreateUser } from '@/src/lib/permissions';
 import { RoleBadge } from '@/components/dashboard/RoleBadge';
 import UserStatusBadge from './UserStatusBadge';
 
 interface Props {
   users: SessionUser[];
   currentUserId: string;
+  /** Role of the actor — drives per-row Edit-button visibility. */
+  actorRole: UserRole;
   onEdit: (user: SessionUser) => void;
 }
 
 type StatusFilter = 'all' | 'active' | 'inactive';
 type RoleFilter = 'all' | UserRole;
 
-export default function UsersTable({ users, currentUserId, onEdit }: Props) {
+export default function UsersTable({ users, currentUserId, actorRole, onEdit }: Props) {
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+
+  // Per-row edit authority memoized per actor — `canCreateUser` is a pure
+  // 4-line truth table so memoizing the predicate itself isn't worth the
+  // overhead, but locking the closure to `actorRole` lets React skip the
+  // per-row callback identity changes that would otherwise invalidate
+  // child memoization. Visibility (this list) and editability (this fn)
+  // are intentionally two different rules — see permissions/index.ts.
+  const canEditRow = useCallback(
+    (u: SessionUser) => canCreateUser(actorRole, u.role),
+    [actorRole],
+  );
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -60,9 +75,11 @@ export default function UsersTable({ users, currentUserId, onEdit }: Props) {
           className="rounded-lg border border-[#E2E8F0] bg-white px-2 py-1.5 text-xs font-semibold text-[#475569] shadow-sm focus:border-[#0b6cbf] focus:outline-none focus:ring-2 focus:ring-[#0b6cbf]/20"
         >
           <option value="all">All roles</option>
-          <option value="admin">Admin</option>
-          <option value="manager">Manager</option>
-          <option value="sales">Sales</option>
+          {ROLES.map((r) => (
+            <option key={r} value={r}>
+              {ROLE_LABELS[r]}
+            </option>
+          ))}
         </select>
         <select
           value={statusFilter}
@@ -113,13 +130,19 @@ export default function UsersTable({ users, currentUserId, onEdit }: Props) {
                   )}
                 </td>
                 <td className="px-4 py-2.5 text-right">
-                  <button
-                    type="button"
-                    onClick={() => onEdit(u)}
-                    className="rounded-lg border border-[#E2E8F0] bg-white px-3 py-1 text-xs font-semibold text-[#475569] hover:bg-[#F8FAFC]"
-                  >
-                    Edit
-                  </button>
+                  {canEditRow(u) ? (
+                    <button
+                      type="button"
+                      onClick={() => onEdit(u)}
+                      className="rounded-lg border border-[#E2E8F0] bg-white px-3 py-1 text-xs font-semibold text-[#475569] hover:bg-[#F8FAFC]"
+                    >
+                      Edit
+                    </button>
+                  ) : (
+                    <span className="text-[10px] uppercase tracking-wide text-[#94A3B8]">
+                      View only
+                    </span>
+                  )}
                 </td>
               </tr>
             ))}
@@ -148,13 +171,19 @@ export default function UsersTable({ users, currentUserId, onEdit }: Props) {
                 </p>
                 <p className="truncate text-xs text-[#475569]">{u.email}</p>
               </div>
-              <button
-                type="button"
-                onClick={() => onEdit(u)}
-                className="shrink-0 rounded-lg border border-[#E2E8F0] bg-white px-3 py-1 text-xs font-semibold text-[#475569]"
-              >
-                Edit
-              </button>
+              {canEditRow(u) ? (
+                <button
+                  type="button"
+                  onClick={() => onEdit(u)}
+                  className="shrink-0 rounded-lg border border-[#E2E8F0] bg-white px-3 py-1 text-xs font-semibold text-[#475569]"
+                >
+                  Edit
+                </button>
+              ) : (
+                <span className="shrink-0 text-[10px] uppercase tracking-wide text-[#94A3B8]">
+                  View only
+                </span>
+              )}
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <RoleBadge role={u.role} />

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import type { Lead, StatsData, UpdatePayload, TransferPayload } from '@/types';
+import type { AssignmentView } from '@/src/features/assignments/serializers';
 
 const REFRESH_INTERVAL_MS = 300_000; // 5 minutes
 
@@ -62,11 +63,24 @@ interface UseLeadsReturn {
   error: string | null;
   headers: string[];          // live Row 1 headers — drives column order for both dashboards
   statusOptions: string[];    // dropdown options read from Sheets data validation rule
+  /**
+   * Assignment lookup map keyed by `lead.rowIndex`. Populated from the same
+   * /api/leads call that returns leads — no extra round-trip. The inline
+   * assignment selector in the leads table reads from this map to render
+   * each row's current assignee.
+   */
+  assignments: Record<number, AssignmentView>;
   newLeadCount: number;
   newLeadRowKeys: Set<string>;
   clearNewLeadCount: () => void;
   updateLead: (payload: Omit<UpdatePayload, 'dashboardId' | 'sheetName'>) => Promise<void>;
   transferLead: (lead: Lead, targetSheetName: string) => Promise<void>;
+  /**
+   * Force an immediate refresh of leads + assignments. The inline assignment
+   * UI calls this after a successful POST/PATCH/DELETE so the badge updates
+   * without waiting for the 5-minute poll.
+   */
+  refetch: () => Promise<void>;
 }
 
 export function useLeads(dashboardId: string, sheetName: string): UseLeadsReturn {
@@ -76,6 +90,7 @@ export function useLeads(dashboardId: string, sheetName: string): UseLeadsReturn
   const [lastUpdated, setLastUpdated]   = useState<Date | null>(null);
   const [headers, setHeaders] = useState<string[]>([]);
   const [statusOptions, setStatusOptions]   = useState<string[]>([]);
+  const [assignments, setAssignments] = useState<Record<number, AssignmentView>>({});
   const [newLeadCount, setNewLeadCount] = useState(0);
   const [newLeadRowKeys, setNewLeadRowKeys] = useState<Set<string>>(new Set());
 
@@ -105,12 +120,20 @@ export function useLeads(dashboardId: string, sheetName: string): UseLeadsReturn
       const res = await fetch(`/api/leads?${params}`, { cache: 'no-store' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-      const json: { leads: Lead[]; headers: string[]; statusOptions: string[] } = await res.json();
+      const json: {
+        leads: Lead[];
+        headers: string[];
+        statusOptions: string[];
+        assignments?: Record<number, AssignmentView>;
+      } = await res.json();
       const raw = json.leads ?? [];
       // Always update headers — they drive the column schema for both dashboards.
       if (Array.isArray(json.headers)) setHeaders(json.headers);
       // Always overwrite — even an empty array is a valid response (no rule found).
       if (Array.isArray(json.statusOptions)) setStatusOptions(json.statusOptions);
+      // Assignments map (Phase 2F+). Always overwrite — an empty object is a
+      // valid response (no rows assigned in this branch yet).
+      setAssignments(json.assignments ?? {});
       const sorted = sortNewestFirst(raw);
 
       if (silent && !isFirstFetch.current) {
@@ -165,6 +188,7 @@ export function useLeads(dashboardId: string, sheetName: string): UseLeadsReturn
     setLastUpdated(null);
     setHeaders([]);
     setStatusOptions([]);
+    setAssignments({});
     setNewLeadCount(0);
     setNewLeadRowKeys(new Set());
     isFirstFetch.current = true;
@@ -257,6 +281,11 @@ export function useLeads(dashboardId: string, sheetName: string): UseLeadsReturn
     []
   );
 
+  // Public manual refresh — used by the inline assignment selector after a
+  // POST/PATCH/DELETE to /api/assignments so the row's assignee badge
+  // updates immediately (without waiting for the 5-minute poll).
+  const refetch = useCallback(() => fetchData(true), [fetchData]);
+
   return {
     leads,
     stats: { total: leads.length, lastUpdated },
@@ -264,10 +293,12 @@ export function useLeads(dashboardId: string, sheetName: string): UseLeadsReturn
     error,
     headers,
     statusOptions,
+    assignments,
     newLeadCount,
     newLeadRowKeys,
     clearNewLeadCount,
     updateLead,
     transferLead,
+    refetch,
   };
 }

@@ -34,6 +34,18 @@ import { useLeads } from '@/hooks/useLeads';
 import BranchTabs from '@/components/BranchTabs';
 import StatsCards from '@/components/StatsCards';
 import LeadsTable from '@/components/LeadsTable';
+import type { SessionUser } from '@/src/types/auth';
+
+// Phase 2N performance fix: the inline assignment picker used to fetch
+// `/api/users/assignable?branch=X` lazily INSIDE every row's selector —
+// duplicate fetches per row, and a fresh fetch each time the user opened a
+// popover. The candidate list only depends on (branch, actor), so we hoist
+// the fetch to the shell, keep ONE request per branch switch, and pass the
+// result down through AG Grid context. Selectors become pure renderers.
+const INLINE_ASSIGN_ROLES: ReadonlyArray<SessionUser['role']> = [
+  'admin',
+  'senior_sales_executive',
+];
 
 export type CardFilter =
   | 'all'
@@ -52,7 +64,12 @@ const FILTER_LABELS: Record<CardFilter, string> = {
   converted:      'Converted',
 };
 
-export default function LeadDashboardShell() {
+interface Props {
+  /** Authenticated actor — drives the inline assignment picker's authority. */
+  actor: SessionUser;
+}
+
+export default function LeadDashboardShell({ actor }: Props) {
   const [activeDashboard, setActiveDashboard] = useState<Dashboard>(DASHBOARDS[0]);
   const [activeBranch, setActiveBranch]       = useState<DynamicBranch | null>(null);
   const [activeFilter, setActiveFilter]       = useState<CardFilter>('all');
@@ -74,10 +91,47 @@ export default function LeadDashboardShell() {
   const {
     leads, stats, loading, error,
     headers, statusOptions,
+    assignments, refetch,
     newLeadCount, newLeadRowKeys,
     clearNewLeadCount,
     updateLead, transferLead,
   } = useLeads(activeDashboard.id, activeBranch?.sheetName ?? '');
+
+  // ── Shared inline-assignment candidate cache ────────────────────────────
+  // One fetch per (branch, actor) pair; shared across every row's inline
+  // selector. Empty when the actor has no inline-assign authority OR when
+  // no branch is selected yet.
+  const [candidates, setCandidates] = useState<SessionUser[]>([]);
+  const canInlineAssign = INLINE_ASSIGN_ROLES.includes(actor.role);
+  const currentBranchName = activeBranch?.sheetName ?? '';
+
+  useEffect(() => {
+    if (!canInlineAssign || !currentBranchName) {
+      setCandidates([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/users/assignable?branch=${encodeURIComponent(currentBranchName)}`,
+          { cache: 'no-store' },
+        );
+        if (!res.ok) {
+          if (!cancelled) setCandidates([]);
+          return;
+        }
+        const data = (await res.json()) as { users?: SessionUser[] };
+        if (cancelled) return;
+        setCandidates(Array.isArray(data.users) ? data.users : []);
+      } catch {
+        if (!cancelled) setCandidates([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [canInlineAssign, currentBranchName]);
 
   const handleDashboardChange = (dashboard: Dashboard) => {
     setActiveDashboard(dashboard);
@@ -218,6 +272,10 @@ export default function LeadDashboardShell() {
             newLeadRowKeys={newLeadRowKeys}
             headers={headers}
             statusOptions={statusOptions}
+            actor={actor}
+            assignments={assignments}
+            assignmentCandidates={candidates}
+            onAssignmentChanged={refetch}
           />
         </div>
       </div>

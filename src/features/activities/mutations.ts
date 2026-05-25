@@ -186,6 +186,41 @@ export function logUserPasswordReset(
   });
 }
 
+/** Explicit role-change event — emitted alongside user_updated when role differs. */
+export function logRoleChanged(
+  actorId: string,
+  targetId: string,
+  oldRole: string,
+  newRole: string,
+): Promise<void> {
+  return log('role_changed', {
+    performedBy: actorId,
+    subjectUserId: targetId,
+    oldValue: { role: oldRole },
+    newValue: { role: newRole },
+  });
+}
+
+/**
+ * Audit-log a forbidden attempt. Emitted from API handlers right before
+ * returning 403. Useful for detecting credential abuse / probing — admins
+ * can grep for repeated denials by `performed_by`.
+ *
+ * `attemptedAction` is a stable short token ('create_user', 'update_user',
+ * 'assign_lead', …) — keep it terse and never change existing values (it's
+ * an append-only audit contract).
+ */
+export function logPrivilegeDeniedAttempt(
+  actorId: string | null,
+  attemptedAction: string,
+  details: JsonValue,
+): Promise<void> {
+  return log('privilege_denied_attempt', {
+    performedBy: actorId,
+    newValue: { action: attemptedAction, details },
+  });
+}
+
 // ── Lead / assignment events (foundations) ──────────────────────────────────
 
 export function logAssignmentCreated(
@@ -253,3 +288,9 @@ export function logLeadTransferred(
     newValue: { branch: toBranch },
   });
 }
+
+// NOTE: the `sheet_assigned` / `sheet_unassigned` action strings remain in
+// ACTIVITY_ACTIONS (see ./types.ts) for HISTORICAL audit-log compatibility —
+// any rows written before the Sheets surface was retired will still parse
+// cleanly. The helpers themselves were removed because nothing in the app
+// emits these events anymore.

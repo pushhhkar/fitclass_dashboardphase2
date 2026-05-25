@@ -1,10 +1,21 @@
 /**
  * Small chip showing the current owner of a lead. Server-renderable.
+ *
+ * Accepts a MINIMAL display shape (`{ name, email }`) instead of the full
+ * `SessionUser` — callers can pass either. The narrower contract means
+ * any place that has just a name+email pair (e.g. the new
+ * `assignee_name`/`assignee_email` fields on `AssignmentView` after
+ * Phase 2U) can render the badge directly, without first having to look
+ * the user up in a candidate list.
  */
-import type { SessionUser } from '@/src/types/auth';
+
+interface AssigneeLike {
+  name: string | null;
+  email: string;
+}
 
 interface Props {
-  user: SessionUser | null;
+  user: AssigneeLike | null;
   className?: string;
 }
 
