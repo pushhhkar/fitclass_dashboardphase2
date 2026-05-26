@@ -5,11 +5,32 @@
 html, body {
   margin: 0;
   padding: 0;
-  height: 100%;
   background: #F8FAFC;
   color: #0F172A;
   -webkit-font-smoothing: antialiased;
 }
+
+/* ── Viewport policy ─────────────────────────────────────────────────────────
+   Mobile/tablet: natural document scroll. No height clamp on the body so
+   content can grow past the fold and remain reachable by scrolling.
+   Desktop (≥1024px): rigid 100dvh shell so the AG Grid owns the only
+   scroll region. The .dashboard-shell class is set on <body> in app/layout.tsx.
+*/
+html, body { min-height: 100%; }
+
+@media (min-width: 1024px) {
+  html, body { height: 100%; }
+  body.dashboard-shell {
+    height: 100dvh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+}
+
+/* Prevent iOS Safari from rubber-banding the body horizontally when an
+   overflowing child (e.g. the branch-tab strip) needs to scroll. */
+body { overflow-x: hidden; }
 
 /* ── AG Grid wrapper ─────────────────────────────────────────────────────────
    overflow:hidden clips rows to the card's rounded corners.

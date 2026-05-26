@@ -6,6 +6,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import type { SessionUser } from '@/src/types/auth';
 import UserMenu from './UserMenu';
+import HamburgerButton from './HamburgerButton';
 
 interface Props {
   user: SessionUser;
@@ -14,7 +15,8 @@ interface Props {
 export default function DashboardNavbar({ user }: Props) {
   return (
     <header className="sticky top-0 z-30 shrink-0 border-b border-[#E2E8F0] bg-white">
-      <div className="flex h-14 items-center gap-3 px-3 sm:gap-4 sm:px-5">
+      <div className="flex h-14 items-center gap-2 px-2 sm:gap-4 sm:px-5">
+        <HamburgerButton />
         <Link
           href="/dashboard/leads"
           className="shrink-0"

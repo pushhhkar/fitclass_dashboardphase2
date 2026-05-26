@@ -150,10 +150,12 @@ export default function LeadDashboardShell({ actor }: Props) {
   };
 
   return (
-    // `flex-1 min-h-0` consumes the entirety of <main> without overflowing.
-    // The shell's own children either claim a fixed slot (`shrink-0`) or
-    // absorb the remainder (`flex-1 min-h-0`, the grid region).
-    <div className="flex min-h-0 flex-1 flex-col bg-[#F8FAFC]">
+    // Desktop (≥lg): rigid `flex-1 min-h-0` so the AG Grid region has a
+    // bounded height and owns the only scroll. Mobile/tablet: grow with
+    // content (`min-h-0` would collapse the grid card to zero inside
+    // document scroll; we drop it below lg so the mobile card list is
+    // free to extend the page naturally).
+    <div className="flex w-full flex-1 flex-col bg-[#F8FAFC] lg:min-h-0">
 
       {/* ── Source/dashboard switcher + new-lead badge ─────────────────────── */}
       <div className="flex shrink-0 items-center gap-3 border-b border-[#E2E8F0] bg-white px-3 py-2 sm:px-5 sm:py-2.5">
@@ -253,14 +255,14 @@ export default function LeadDashboardShell({ actor }: Props) {
       </div>
 
       {/* ── Grid region ────────────────────────────────────────────────────────
-          `flex-1 min-h-0 overflow-hidden` is the canonical "fill remaining
-          vertical space and clip" recipe. `min-h-0` is critical: without it,
-          flex items refuse to shrink below their content-size and the grid
-          spills, pushing the chrome rows up into each other (the original
-          "collapsing/overlapping" symptom).
+          Desktop (≥lg): `flex-1 min-h-0 overflow-hidden` — the canonical
+          "fill remaining vertical space and clip" recipe so the AG Grid
+          gets an exact bounded height. `min-h-0` is critical there.
+          Mobile/tablet: no min-h-0 / overflow-hidden — the wrapper grows
+          with its content (a stacked card list) inside document scroll.
       */}
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-3 sm:px-5 sm:py-3">
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-[#E2E8F0] bg-white shadow-sm">
+      <div className="flex w-full flex-1 flex-col p-2 sm:px-5 sm:py-3 lg:min-h-0 lg:overflow-hidden">
+        <div className="flex w-full flex-1 flex-col rounded-xl border border-[#E2E8F0] bg-white shadow-sm lg:min-h-0 lg:overflow-hidden">
           <LeadsTable
             leads={leads}
             loading={loading || (!activeBranch && !branchesLoading)}

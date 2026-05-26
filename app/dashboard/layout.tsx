@@ -15,7 +15,7 @@ import { redirect } from 'next/navigation';
 import { getSessionFromRequest } from '@/src/lib/auth/session';
 import DashboardNavbar from '@/components/dashboard/DashboardNavbar';
 import DashboardSidebar from '@/components/dashboard/DashboardSidebar';
-import MobileNav from '@/components/dashboard/MobileNav';
+import SidebarController from '@/components/dashboard/SidebarController';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,13 +38,20 @@ export default async function DashboardLayout({ children }: Props) {
   // This avoids the bug where a full-bleed page used `-m-4 sm:-m-6` to escape
   // the padding: that interacted badly with `overflow-y-auto` + sticky
   // positioning and caused inner sections to visually overlap.
+  // Layout policy:
+  //   - Mobile/tablet (<lg): natural document scroll inherited from <body>.
+  //     The shell stretches via `min-h-screen` so short pages still fill
+  //     the viewport, but long pages can scroll past the fold normally.
+  //   - Desktop (≥lg): the body is `100dvh + overflow:hidden` (see
+  //     globals.css), and the inner row is `flex-1 min-h-0 overflow-hidden`
+  //     so the AG Grid owns the only scroll region.
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden bg-[#F8FAFC]">
+    <div className="flex min-h-screen w-full flex-col bg-[#F8FAFC] lg:h-full lg:min-h-0 lg:overflow-hidden">
       <DashboardNavbar user={session} />
-      <MobileNav role={session.role} />
-      <div className="flex min-h-0 flex-1 overflow-hidden">
+      <SidebarController role={session.role} />
+      <div className="flex w-full flex-1 lg:min-h-0 lg:overflow-hidden">
         <DashboardSidebar role={session.role} />
-        <main className="flex min-w-0 flex-1 flex-col overflow-y-auto">
+        <main className="flex w-full min-w-0 flex-1 flex-col lg:overflow-y-auto">
           {children}
         </main>
       </div>

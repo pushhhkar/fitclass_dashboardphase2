@@ -1,8 +1,9 @@
 'use client';
 
 /**
- * Left sidebar nav — desktop only (`hidden md:flex`). The mobile equivalent
- * is rendered by <MobileNav /> as a horizontal strip. Active-link highlight
+ * Persistent left sidebar — desktop only (`hidden lg:flex`, ≥1024px).
+ * Below the `lg` breakpoint, the mobile/tablet drawer in SidebarController
+ * takes over (rendered from the dashboard layout). Active-link highlight
  * uses `usePathname`, hence the client boundary.
  *
  * Items are filtered by role at the SOURCE — see src/config/navigation.ts.
@@ -21,7 +22,7 @@ export default function DashboardSidebar({ role }: Props) {
   const items = navItemsForRole(role);
 
   return (
-    <aside className="hidden w-56 shrink-0 flex-col border-r border-[#E2E8F0] bg-white md:flex">
+    <aside className="hidden w-56 shrink-0 flex-col border-r border-[#E2E8F0] bg-white lg:flex">
       <nav className="flex flex-col gap-1 p-4" aria-label="Primary">
         {items.map((item) => {
           const active =

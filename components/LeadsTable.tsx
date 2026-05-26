@@ -61,10 +61,17 @@ interface Props {
 }
 
 // ── Breakpoint hook ───────────────────────────────────────────────────────────
+// Below the Tailwind `lg` breakpoint (1024px) we render the touch-friendly
+// stacked card list instead of AG Grid. The card path:
+//   - works inside natural document scroll (no rigid height contract)
+//   - avoids AG Grid's horizontal-scroll-trap on narrow viewports
+//   - keeps the same inline-assignment + status-edit affordances
+// AG Grid is reserved for ≥1024px where there is room for the table chrome
+// and the rigid `flex-1 min-h-0` shell is in effect.
 function useIsMobile(): boolean {
   const [mobile, setMobile] = useState(false);
   useEffect(() => {
-    const mq = window.matchMedia('(max-width: 767px)');
+    const mq = window.matchMedia('(max-width: 1023px)');
     setMobile(mq.matches);
     const handler = (e: MediaQueryListEvent) => setMobile(e.matches);
     mq.addEventListener('change', handler);

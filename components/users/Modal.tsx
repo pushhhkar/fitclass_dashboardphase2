@@ -39,7 +39,7 @@ export default function Modal({ open, onClose, title, children, locked }: Props)
       aria-label={title}
     >
       <div
-        className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl"
+        className="flex max-h-[calc(100dvh-4rem)] w-full max-w-md flex-col overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl sm:p-6"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-5 flex items-start justify-between gap-3">

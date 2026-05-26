@@ -13,19 +13,21 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" suppressHydrationWarning>
       {/*
-        Full-viewport rigid shell.
-        overflow:hidden stops the page itself from scrolling — the only
-        scrollable region is the AG Grid body inside the dashboard.
-        On mobile, Dashboard switches to a natural document scroll instead.
+        Viewport policy:
+          - Mobile/tablet (< lg): natural document scroll. body has no
+            height clamp and NO overflow lock, so the viewport scrolls
+            normally — content can grow past the fold and remain reachable.
+          - Desktop (≥ lg): rigid 100dvh shell. The dashboard's AG Grid
+            owns the only scroll region; the page itself doesn't scroll.
+        The `dashboard-shell` class on the body handles the breakpoint via
+        CSS (lg:overflow-hidden / lg:h-dvh). Doing this in CSS instead of
+        inline style avoids the SSR/CSR flash and keeps the grid pinned.
       */}
       <body
-        className={`${inter.className} bg-[#F8FAFC]`}
-        style={{ margin: 0, padding: 0, height: '100dvh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+        className={`${inter.className} dashboard-shell bg-[#F8FAFC]`}
         suppressHydrationWarning
       >
-        <main style={{ flex: '1 1 0', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          {children}
-        </main>
+        {children}
       </body>
     </html>
   );
