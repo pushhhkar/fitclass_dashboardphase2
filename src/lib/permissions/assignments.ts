@@ -69,11 +69,10 @@ export function canAssignLead(
   lead: LeadContext,
 ): boolean {
   if (!user) return false;
-  // Phase 2M: only admin (oversight) and SSE (operational) act on lead
-  // assignments. Managers are removed from lead-assignment authority —
-  // their job is sheet-level ownership (see ./sheets.ts).
+  // Phase 2W: admin, manager, SSE can all assign — SE cannot. Manager and
+  // SSE are scoped to branches they can access; admin is unrestricted.
   if (user.role === 'admin') return true;
-  if (user.role === 'senior_sales_executive') {
+  if (user.role === 'manager' || user.role === 'senior_sales_executive') {
     return canAccessLeadBranch(user, lead.branch);
   }
   return false;
@@ -127,26 +126,33 @@ export function canAssignLead(
  * JWT + Node-side DB re-read.
  */
 /**
- * Phase 2M update: LEAD assignments are now SSE → SE only.
+ * Phase 2W: who is the actor allowed to assign WORK TO?
  *
  *   actor \ target           │ admin │ manager │ sr.sales │ sales
  *   ─────────────────────────┼───────┼─────────┼──────────┼───────
- *   admin                    │   ✗   │    ✗    │    ✗     │   ✓     ← oversight
- *   manager                  │   ✗   │    ✗    │    ✗     │   ✗     ← no lead assigns
- *   senior_sales_executive   │   ✗   │    ✗    │    ✗     │   ✓     ← primary
+ *   admin                    │   ✗   │    ✓    │    ✓     │   ✓
+ *   manager                  │   ✗   │    ✗    │    ✓     │   ✓
+ *   senior_sales_executive   │   ✗   │    ✗    │    ✗     │   ✓
  *   sales_executive          │   ✗   │    ✗    │    ✗     │   ✗
  *
  *   PLUS: target.role === 'admin' → ✗  (admins never receive leads)
  *   PLUS: actor.id === target.id → ✗  (no self-assignment)
  *
- * Manager is REMOVED from lead-assignment authority — managers now do
- * SHEET assignments (see ./sheets.ts). Admin retains assignment power
- * only as a break-glass oversight role; everyday lead routing is the
- * SSE's job.
+ * ── Why admin is never a target ────────────────────────────────────────────
+ *  Admins are platform operators, not pipeline owners. Routing a lead to an
+ *  admin hides it from sales analytics and creates an audit back-channel
+ *  (managers parking awkward leads on an admin). Banning here is simpler
+ *  than special-casing every downstream consumer.
  *
- * Only `sales_executive` is a valid lead target (the operational role).
- * Routing leads to any other tier breaks the org model and hides the
- * lead from sales-pipeline analytics.
+ * ── Why self-assignment is forbidden ───────────────────────────────────────
+ *  An assignment routes work between users. Self-routing is a no-op in the
+ *  operational model and a known abuse vector (a manager grabbing a hot
+ *  lead, or self-assign + immediate "converted" to manufacture credit).
+ *
+ * ── Why role-hierarchy is the gate ─────────────────────────────────────────
+ *  Only one rule: actor must outrank target. SSE → manager would invert the
+ *  org chart; manager → manager would let peers shuffle work without admin
+ *  oversight. SE cannot assign at all.
  */
 export function canAssignToUser(
   actorRole: UserRole,
@@ -156,9 +162,13 @@ export function canAssignToUser(
 ): boolean {
   if (targetRole === 'admin') return false;
   if (actorId === targetUserId) return false;
-  // Leads always flow to the operational role.
-  if (targetRole !== 'sales_executive') return false;
-  if (actorRole === 'admin' || actorRole === 'senior_sales_executive') return true;
+  if (actorRole === 'admin') return true; // any non-admin
+  if (actorRole === 'manager') {
+    return targetRole === 'senior_sales_executive' || targetRole === 'sales_executive';
+  }
+  if (actorRole === 'senior_sales_executive') {
+    return targetRole === 'sales_executive';
+  }
   return false;
 }
 

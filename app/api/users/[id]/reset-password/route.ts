@@ -35,7 +35,8 @@ export async function POST(
   req: NextRequest,
   ctx: RouteContext,
 ): Promise<NextResponse> {
-  const gate = await requireMinimumRoleApi('senior_sales_executive');
+  // Phase 2W: SSE cannot reset passwords. Manager+ only.
+  const gate = await requireMinimumRoleApi('manager');
   if (!gate.ok) return gate.response;
   const actor = gate.session;
 

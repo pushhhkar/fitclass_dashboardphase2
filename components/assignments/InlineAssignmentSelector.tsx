@@ -3,10 +3,10 @@
 /**
  * Inline lead-assignment picker for the leads-dashboard table.
  *
- * ── Authorization summary ─────────────────────────────────────────────────
- *  admin                  → can assign sales_executive only (oversight)
- *  manager                → no inline picker (managers don't route leads)
- *  senior_sales_executive → primary inline assigner; sales_executive only
+ * ── Authorization summary (Phase 2W) ──────────────────────────────────────
+ *  admin                  → can assign any non-admin user
+ *  manager                → can assign SSE + SE inside their branches
+ *  senior_sales_executive → can assign SE inside their branches
  *  sales_executive        → read-only badge / "Unassigned" (no UI)
  *
  * ── Phase 2N performance ───────────────────────────────────────────────────
@@ -51,21 +51,16 @@ interface Props {
    * refresh the leads/assignments map so the row's badge updates.
    */
   onChanged: () => void;
-  /**
-   * Optional override for the candidates' display labels — when present we
-   * show a friendly fallback if the assignment refers to a user no longer
-   * in the candidate list (e.g. a manager-owned lead viewed by an SSE).
-   */
-  assigneeLabel?: string | null;
 }
 
 type PopoverRect = { top: number; left: number; minWidth: number };
 
-// Only admin (oversight) and senior_sales_executive (operational) can
-// perform LEAD assignments inline. Managers and sales_executives have
-// no inline assign authority.
+// Phase 2W: admin, manager, and SSE all carry inline-assign authority.
+// SE is the operational role and has no assign UI. The button's mere
+// presence is a UX hint — the server still re-checks every write.
 const CAN_ASSIGN_ROLES: ReadonlyArray<SessionUser['role']> = [
   'admin',
+  'manager',
   'senior_sales_executive',
 ];
 
@@ -76,7 +71,6 @@ export default function InlineAssignmentSelector({
   actor,
   candidates,
   onChanged,
-  assigneeLabel,
 }: Props) {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -178,7 +172,7 @@ export default function InlineAssignmentSelector({
     // where the embed somehow returned null).
     const inList = candidatesById.get(existing.assigned_to);
     if (inList) return inList.name ?? inList.email;
-    return assigneeLabel ?? 'Unknown user';
+    return 'Unknown user';
   })();
 
   const assign = async (userId: string) => {

@@ -1,17 +1,15 @@
 /**
- * /dashboard/assignments — senior_sales_executive+ (Phase 2I).
+ * /dashboard/assignments — senior_sales_executive+ (Phase 2W).
  *
- * Server-rendered list of current assignments visible to the user, plus the
- * pool of users they can assign to. Both lists are filtered SERVER-SIDE:
- *  - Admins → all assignments + all active users.
- *  - Managers → assignments whose `branch` is in their allowed_branches,
- *    plus active users they may route work to (sales tier in branch).
- *  - Senior Sales Executives → assignments in their allowed_branches,
- *    plus active Sales Executives in branch (`canAssignToUser` returns
- *    true only for `sales_executive` when actor is SSE).
+ * Server-rendered list of current assignments + candidate assignees. Both
+ * lists are filtered server-side:
+ *  - Admin   → all assignments + all active non-admin users
+ *  - Manager → in-branch assignments + active SSE/SE in branch overlap
+ *  - SSE     → in-branch assignments + active SE in branch overlap
+ *  - SE      → rejected by the role gate (read-only role)
  *
- * The page revalidates on demand (`force-dynamic`) so router.refresh() inside
- * AssignLeadModal updates the table after any mutation.
+ * Page is `force-dynamic`; `revalidatePath('/dashboard/assignments')` in
+ * the mutation handlers refreshes this view after writes.
  */
 import { requireMinimumRole } from '@/src/lib/permissions/server';
 import {

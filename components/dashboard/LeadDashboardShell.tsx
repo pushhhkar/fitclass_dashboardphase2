@@ -44,6 +44,7 @@ import type { SessionUser } from '@/src/types/auth';
 // result down through AG Grid context. Selectors become pure renderers.
 const INLINE_ASSIGN_ROLES: ReadonlyArray<SessionUser['role']> = [
   'admin',
+  'manager',
   'senior_sales_executive',
 ];
 

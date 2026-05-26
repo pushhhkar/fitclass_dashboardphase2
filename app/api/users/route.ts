@@ -1,22 +1,20 @@
 /**
- * /api/users — manager+ user management (Phase 2H hierarchy).
+ * /api/users — user management (Phase 2W hierarchy).
  *
- *   GET  → list users (newest first), filtered to the rows the actor is
- *          allowed to manage. Admin sees everyone; manager sees the sales
- *          tier they could create / edit.
- *   POST → create a user; server generates a temporary password (returned
- *          ONCE in the response body for out-of-band sharing).
+ *   GET  → list users the actor is allowed to SEE (admin all, manager + SSE
+ *          branch-scoped, SE self only). Gate: SSE+.
+ *   POST → create a user. Gate: manager+. Server generates a temporary
+ *          password returned ONCE in the response body.
  *
  * SECURITY (defence-in-depth):
- *  - `requireMinimumRoleApi('senior_sales_executive')` rejects sales_executive
- *    up front (Phase 2M — SSE creates SEs, so they need user-mgmt access).
- *  - `canCreateUser(actor.role, target.role)` enforces the role-routing rule
- *    — admin can create any role, manager can only create sales-tier roles.
- *    A crafted POST that tries to create another admin/manager is rejected
- *    server-side with a 403, regardless of what the UI offered.
- *  - The denied attempt is recorded via `logPrivilegeDeniedAttempt` so
- *    operators can spot repeated probing.
- *  - Branches are still validated against the canonical Sheets-derived list.
+ *  - GET stays at `senior_sales_executive` so SSE can view their team but
+ *    POST tightens to `manager` — SSE has NO user-creation authority in
+ *    Phase 2W.
+ *  - `canCreateUser(actor.role, target.role)` enforces the routing matrix:
+ *    admin → any role (incl admin); manager → any non-admin.
+ *  - Non-admin actors cannot grant branches outside their own scope.
+ *  - The denied attempt is recorded via `logPrivilegeDeniedAttempt`.
+ *  - Branches are validated against the canonical Sheets-derived list.
  *  - Generic 409 on email conflict (no enumeration leak).
  *  - Password leaves the server exactly ONCE in the create response.
  */
@@ -64,7 +62,8 @@ export async function GET(): Promise<NextResponse> {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const gate = await requireMinimumRoleApi('senior_sales_executive');
+  // Phase 2W: SSE has VIEW authority on users but NOT create. Manager+ only.
+  const gate = await requireMinimumRoleApi('manager');
   if (!gate.ok) return gate.response;
   const actor = gate.session;
 
@@ -96,6 +95,28 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       { error: 'You are not allowed to create a user with that role' },
       { status: 403 },
     );
+  }
+
+  // Phase 2W defence-in-depth: non-admin actors must only grant branches
+  // they themselves own. UI already filters via /api/branches/all but a
+  // crafted POST would otherwise let a manager mint a user with branches
+  // outside their scope, escalating data access through their downline.
+  if (actor.role !== 'admin') {
+    const outside = input.allowed_branches.filter(
+      (b) => !actor.allowed_branches.includes(b),
+    );
+    if (outside.length > 0) {
+      await logPrivilegeDeniedAttempt(actor.id, 'create_user', {
+        reason: 'branch_scope',
+        attempted_role: input.role,
+        attempted_email: input.email,
+        outside_branches: outside,
+      });
+      return NextResponse.json(
+        { error: 'You can only grant branches that are in your own scope' },
+        { status: 403 },
+      );
+    }
   }
 
   // Defence-in-depth: the UI sources branches from /api/branches/all, but a

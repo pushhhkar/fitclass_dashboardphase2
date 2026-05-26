@@ -49,78 +49,87 @@ export function hasMinimumRole(
 // don't change — only the body of the helper does.
 
 /**
- * Whether the actor has ANY user-management authority at all.
- * After Phase 2M this is senior_sales_executive-or-above — admin creates
- * managers, manager creates SSEs, SSE creates sales_executives. Only
- * sales_executive has no user-creation authority. The fine-grained
- * "can actor create THIS role" check is `canCreateUser` below.
+ * Whether the actor has ANY user-creation authority at all (Phase 2W).
+ *
+ * Admin + manager can mint users; SSE + SE cannot. This is the gate for the
+ * user-creation API surface. The VIEW gate is `canManageUsersView` below —
+ * SSE can list users (to see their team) without being able to create them.
  */
 export function canManageUsers(user: SessionUser | null | undefined): boolean {
+  return hasMinimumRole(user, 'manager');
+}
+
+/**
+ * View-only gate for the user-management surface (Phase 2W).
+ *
+ * SSE can list users in their branch (so they see who reports to them),
+ * but the row-level `canCreateUser` predicate decides whether the Edit
+ * button is shown — for SSE it is always false. SE has no surface at all.
+ */
+export function canManageUsersView(
+  user: SessionUser | null | undefined,
+): boolean {
   return hasMinimumRole(user, 'senior_sales_executive');
 }
 
 /**
- * Hierarchical user-creation authority (Phase 2P — admin is unconstrained
- * within non-admin roles; mid-tier remains strict one-level-down).
+ * Hierarchical user-creation authority (Phase 2W — final spec).
  *
  *   actor \ target │ admin │ manager │ senior_sales_exec │ sales_exec
  *   ───────────────┼───────┼─────────┼───────────────────┼────────────
- *   admin          │   ✗   │    ✓    │         ✓         │     ✓     ← broadened
- *   manager        │   ✗   │    ✗    │         ✓         │     ✗
- *   senior_sales_e │   ✗   │    ✗    │         ✗         │     ✓
+ *   admin          │   ✓   │    ✓    │         ✓         │     ✓
+ *   manager        │   ✗   │    ✓    │         ✓         │     ✓
+ *   senior_sales_e │   ✗   │    ✗    │         ✗         │     ✗
  *   sales_executive│   ✗   │    ✗    │         ✗         │     ✗
  *
- * ── Why admin is broadened ─────────────────────────────────────────────────
- *  Phase 2M restricted admin to creating managers only (strict one-level-
- *  down). In practice that forced admins through the full chain (create
- *  manager → wait for them to create SSE → wait for them to create SE) just
- *  to onboard a sales executive. Phase 2P treats admin as the "bootstrap +
- *  repair" role: admins can mint any non-admin role directly when org
- *  structure is being established or repaired. The strict mid-tier chain
- *  (manager→SSE only, SSE→SE only) is preserved.
+ * ── Admin → admin is allowed ────────────────────────────────────────────────
+ *  Phase 2W treats admin as fully self-sustaining: admins can mint other
+ *  admins from the UI. The seed script remains the bootstrap mechanism for
+ *  brand-new environments but is no longer the ONLY path to another admin.
+ *  Compromise risk is accepted in exchange for operational flexibility —
+ *  admins are already trusted with full data access, so the marginal
+ *  privilege of creating peers is not a meaningful escalation.
  *
- * ── Why no admin → admin ────────────────────────────────────────────────────
- *  Admins must be provisioned out-of-band (via the seed script). Mutual
- *  admin promotion in the app would let any compromised admin escalate the
- *  attacker's coverage. Use `npm run db:seed-admin` for new admins.
+ * ── Manager creates any non-admin ──────────────────────────────────────────
+ *  Managers run their branches end-to-end and need to onboard SSE + SE
+ *  without admin involvement. They cannot mint admins.
+ *
+ * ── SSE and SE cannot create users ─────────────────────────────────────────
+ *  Both roles are purely operational; org-structure changes require
+ *  manager+ authority.
  *
  * ── Same rule covers EDIT, not just CREATE ─────────────────────────────────
  *  Editing a user's role is asserting a new role assignment. The PATCH
  *  handler calls this TWICE: against the target's CURRENT role (may the
  *  actor touch this user at all?) and against the patch's NEW role (may
  *  the actor place them there?). Both must be true.
- *
- * Pure 2-arg truth table — composes with the API role gate that proves the
- * actor's claimed role via the verified JWT.
  */
 export function canCreateUser(
   actorRole: UserRole,
   targetRole: UserRole,
 ): boolean {
-  if (targetRole === 'admin') return false;
-  if (actorRole === 'admin') return true; // any non-admin target
-  if (actorRole === 'manager') return targetRole === 'senior_sales_executive';
-  if (actorRole === 'senior_sales_executive') return targetRole === 'sales_executive';
-  return false;
+  if (actorRole === 'admin') return true; // admin → any role, including admin
+  if (targetRole === 'admin') return false; // non-admins cannot mint admins
+  if (actorRole === 'manager') return true; // manager → any non-admin
+  return false; // SSE + SE have no user-creation authority
 }
 
 /**
- * Who is the actor allowed to SEE in the user-management surface?
+ * Who is the actor allowed to SEE in the user-management surface? (Phase 2W)
  *
  *  - admin → all users
- *  - manager → themselves + SSE/SE in branch overlap
- *  - SSE → themselves + SE in branch overlap
+ *  - manager → themselves + any non-admin in branch overlap
+ *  - SSE → themselves + SE in branch overlap (view-only)
  *  - SE → only themselves
  *
  * Distinct from `canCreateUser` (the authority predicate): visibility is
- * broader than edit authority. A manager SEES the SEs in their branch
- * (operational oversight) but cannot EDIT them — the UsersTable hides the
- * Edit button for rows where `canCreateUser` returns false.
+ * broader than edit authority. A manager SEES every non-admin in their
+ * branch (operational oversight) but the UsersTable hides Edit for rows
+ * where `canCreateUser` returns false.
  *
- * Pure 2-argument predicate. Branch overlap is computed against the actor's
- * `allowed_branches`; unrestricted users (`allowed_branches = []`) only
- * appear if the actor is also unrestricted (admin) — prevents an
- * unrestricted SE from showing up in every manager's table.
+ * Branch overlap rule: targets with empty `allowed_branches` only appear
+ * to admin — prevents an unrestricted user from showing up in every
+ * manager's table.
  */
 export function canViewUser(
   actor: SessionUser | null | undefined,
@@ -129,16 +138,16 @@ export function canViewUser(
   if (!actor) return false;
   if (actor.role === 'admin') return true;
   if (target.id === actor.id) return true; // always see self
+  if (target.role === 'admin') return false; // non-admins never see admins
 
-  // Non-admin actors: target must overlap a branch.
   const overlaps =
     target.allowed_branches.length > 0 &&
     target.allowed_branches.some((b) => actor.allowed_branches.includes(b));
   if (!overlaps) return false;
 
-  // Hierarchical visibility — only see DOWN the chain.
   if (actor.role === 'manager') {
-    return target.role === 'senior_sales_executive' || target.role === 'sales_executive';
+    // target.role is already narrowed to non-admin above.
+    return true;
   }
   if (actor.role === 'senior_sales_executive') {
     return target.role === 'sales_executive';

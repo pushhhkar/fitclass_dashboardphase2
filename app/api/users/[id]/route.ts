@@ -54,7 +54,8 @@ export async function PATCH(
   req: NextRequest,
   ctx: RouteContext,
 ): Promise<NextResponse> {
-  const gate = await requireMinimumRoleApi('senior_sales_executive');
+  // Phase 2W: SSE cannot edit users. Manager+ only.
+  const gate = await requireMinimumRoleApi('manager');
   if (!gate.ok) return gate.response;
   const actor = gate.session;
 
@@ -104,6 +105,25 @@ export async function PATCH(
       { error: 'You are not allowed to promote a user to that role' },
       { status: 403 },
     );
+  }
+
+  // Phase 2W defence-in-depth: non-admin actors cannot grant branches
+  // outside their own scope (prevents downline-scope escalation).
+  if (patch.allowed_branches !== undefined && actor.role !== 'admin') {
+    const outside = patch.allowed_branches.filter(
+      (b) => !actor.allowed_branches.includes(b),
+    );
+    if (outside.length > 0) {
+      await logPrivilegeDeniedAttempt(actor.id, 'update_user', {
+        reason: 'branch_scope',
+        target_id: target.id,
+        outside_branches: outside,
+      });
+      return NextResponse.json(
+        { error: 'You can only grant branches that are in your own scope' },
+        { status: 403 },
+      );
+    }
   }
 
   // Defence-in-depth: validate the new branch list against the canonical

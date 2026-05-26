@@ -109,10 +109,10 @@ export function canTransferLead(
 }
 
 /**
- * Can the user create/change/remove the assignment for this lead?
+ * Can the user create/change/remove the assignment for this lead? (Phase 2W)
  *  - admin                    → any branch (oversight)
- *  - senior_sales_executive   → only within their allowed branches (operational)
- *  - manager                  → never (Phase 2M: managers do SHEET assignments)
+ *  - manager                  → only within their allowed branches
+ *  - senior_sales_executive   → only within their allowed branches
  *  - sales_executive          → never
  *
  * NOTE: this is the BRANCH-AUTHORITY check ("can the actor touch this lead's
@@ -126,7 +126,7 @@ export function canAssignLeadWithinBranch(
 ): boolean {
   if (!user) return false;
   if (user.role === 'admin') return true;
-  if (user.role === 'senior_sales_executive') {
+  if (user.role === 'manager' || user.role === 'senior_sales_executive') {
     return canAccessLeadBranch(user, lead.branch);
   }
   return false;

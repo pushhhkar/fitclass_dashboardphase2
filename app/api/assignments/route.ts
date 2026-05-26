@@ -1,21 +1,21 @@
 /**
  * POST /api/assignments — create a new assignment for a lead that has none.
  *
- * Authorization (server-authoritative, Phase 2I):
+ * Authorization (Phase 2W, server-authoritative):
  *  - Caller must be admin, manager, OR senior_sales_executive.
  *    (sales_executive has no assign rights at all.)
  *  - `canAssignLeadWithinBranch` enforces the BRANCH authority — admin
  *    bypasses, manager/SSE need the branch in their `allowed_branches`.
- *  - `canAssignToUser(actor.role, target.role)` enforces the TARGET-role
- *    routing rule:
- *      admin   → anyone
- *      manager → sales tier (senior_sales_executive + sales_executive)
- *      SSE     → sales_executive ONLY (cannot assign to a peer SSE)
+ *  - `canAssignToUser` enforces the TARGET-role routing matrix:
+ *      admin   → any non-admin
+ *      manager → SSE + SE
+ *      SSE     → SE only
  *      SE      → nobody (already filtered by the role-gate above)
- *  - For non-admin actors, the target user must share branch scope so a
- *    mid-tier user can't leak leads outside their territory.
+ *    Plus: admin target ⇒ ✗, self-assign ⇒ ✗ (both enforced here).
+ *  - `canAssignLeadToBranch` validates the assignee's own branch scope so
+ *    we don't create ghost assignments (lead invisible to its supposed owner).
  *
- *  All gates are server-side. Frontend hiding (sidebar / picker) is UX only.
+ *  All gates run server-side. Frontend hiding is UX only.
  *  Every denial path emits a `privilege_denied_attempt` audit row.
  */
 import { NextResponse, type NextRequest } from 'next/server';
