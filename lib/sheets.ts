@@ -2,11 +2,64 @@ import { google } from 'googleapis';
 import { SEMANTIC_HEADERS } from './config';
 import type { Lead, UpdatePayload, TransferPayload } from '@/types';
 
+interface ServiceAccountCredentials {
+  client_email: string;
+  private_key: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Parse + normalise the Google service-account credentials from env.
+ *
+ * ── Why the private_key needs normalising ───────────────────────────────────
+ * The service-account JSON is stored as a SINGLE-LINE value in `.env.local`,
+ * so its `private_key` carries newlines as the two-character escape `\n`.
+ * Depending on how the value was pasted/edited, the key can end up with a
+ * MIX of real newlines and literal `\n` sequences. A PEM key with even one
+ * stray literal `\n` decodes to the wrong bytes, so the RSA signature on the
+ * service-account JWT is invalid and Google's token endpoint rejects it with:
+ *
+ *     invalid_grant: Invalid JWT Signature
+ *
+ * This is a GOOGLE auth failure, NOT a Supabase or app-JWT failure — the
+ * custom `fc_session` token never touches Google or Supabase auth. We fix it
+ * at the source by converting every literal `\n` back into a real newline
+ * before the key is handed to GoogleAuth.
+ */
 function getAuth() {
   const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
   if (!raw) throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON env variable is not set');
+
+  let creds: ServiceAccountCredentials;
+  try {
+    creds = JSON.parse(raw) as ServiceAccountCredentials;
+  } catch {
+    throw new Error(
+      'GOOGLE_SERVICE_ACCOUNT_JSON is not valid JSON. Paste the full service-account key object as a single-line value.',
+    );
+  }
+
+  if (!creds.client_email || !creds.private_key) {
+    throw new Error(
+      'GOOGLE_SERVICE_ACCOUNT_JSON is missing client_email or private_key.',
+    );
+  }
+
+  // Normalise: turn literal "\n" into real newlines. Idempotent — real
+  // newlines are left untouched, so a key that's already correct is unharmed.
+  const privateKey = creds.private_key.replace(/\\n/g, '\n');
+
+  if (
+    !privateKey.startsWith('-----BEGIN PRIVATE KEY-----') ||
+    !privateKey.trimEnd().endsWith('-----END PRIVATE KEY-----')
+  ) {
+    throw new Error(
+      'GOOGLE_SERVICE_ACCOUNT_JSON private_key is malformed (missing PEM header/footer after newline normalisation).',
+    );
+  }
+
   return new google.auth.GoogleAuth({
-    credentials: JSON.parse(raw),
+    credentials: { ...creds, private_key: privateKey },
     scopes: ['https://www.googleapis.com/auth/spreadsheets'],
   });
 }
