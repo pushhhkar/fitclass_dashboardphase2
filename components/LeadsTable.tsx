@@ -15,6 +15,7 @@ import type { CardFilter } from './dashboard/LeadDashboardShell';
 import type { SessionUser } from '@/src/types/auth';
 import type { AssignmentView } from '@/src/features/assignments/serializers';
 import { makeLeadId } from '@/src/features/assignments/lead-id';
+import { FILTER_STATUSES } from '@/src/lib/leads/filter';
 import InlineAssignmentSelector from './assignments/InlineAssignmentSelector';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -23,15 +24,6 @@ ModuleRegistry.registerModules([AllCommunityModule]);
 // Must stay in sync with whatever is in the sheet — but the sheet is always
 // the authority once loaded. This is only shown for ~1s during initial fetch.
 const FALLBACK_STATUS_OPTIONS = ['New', 'Call Attempted', 'Not Answering', 'Call Back Later', 'Budget Issue', 'Wrong Branch', 'Location Issue', 'Not Interested', 'Job Applicant', 'Visit Scheduled', 'Membership Purchased', 'Transfer to'];
-
-const FILTER_STATUSES: Record<CardFilter, string[] | null> = {
-  all:            null,
-  new:            ['New'],
-  callAttempted:  ['Call Attempted', 'Not Answering', 'Call Back Later'],
-  unqualified:    ['Budget Issue', 'Wrong Branch', 'Location Issue', 'Not Interested', 'Job Applicant'],
-  visitScheduled: ['Visit Scheduled'],
-  converted:      ['Membership Purchased'],
-};
 
 interface Props {
   leads: Lead[];

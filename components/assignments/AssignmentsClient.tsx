@@ -9,6 +9,21 @@ import type { SessionUser } from '@/src/types/auth';
 import type { AssignmentView } from '@/src/features/assignments/serializers';
 import AssigneeBadge from './AssigneeBadge';
 import AssignLeadModal from './AssignLeadModal';
+import DownloadButton from '@/components/common/DownloadButton';
+import {
+  buildFilename,
+  exportRows,
+  type ExportColumn,
+  type ExportFormat,
+} from '@/src/lib/export/export';
+
+const ASSIGNMENT_EXPORT_COLUMNS: ExportColumn<AssignmentView>[] = [
+  { header: 'Lead ID', value: (a) => a.lead_id },
+  { header: 'Branch', value: (a) => a.branch },
+  { header: 'Assignee', value: (a) => a.assignee_name ?? a.assignee_email ?? '' },
+  { header: 'Assignee Email', value: (a) => a.assignee_email ?? '' },
+  { header: 'Assigned At', value: (a) => new Date(a.assigned_at).toLocaleString() },
+];
 
 interface Props {
   actor: SessionUser;
@@ -34,6 +49,13 @@ export default function AssignmentsClient({ actor, assignments, candidates }: Pr
       return hay.includes(q);
     });
   }, [assignments, search]);
+
+  // Exports the CURRENT filtered list — the same rows shown below. The server
+  // page already scoped `assignments` to the actor's role/branch authority, so
+  // the export can never reveal assignments the actor can't see.
+  const exportAssignments = (format: ExportFormat) => {
+    exportRows(filtered, ASSIGNMENT_EXPORT_COLUMNS, buildFilename(['assignments']), format);
+  };
 
   return (
     <div className="space-y-4">
@@ -65,6 +87,7 @@ export default function AssignmentsClient({ actor, assignments, candidates }: Pr
           <span className="ml-auto text-xs text-[#64748B]">
             {filtered.length} of {assignments.length}
           </span>
+          <DownloadButton onExport={exportAssignments} rowCount={filtered.length} />
         </div>
 
         {/* Desktop table */}

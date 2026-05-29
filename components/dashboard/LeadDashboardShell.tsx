@@ -34,7 +34,11 @@ import { useLeads } from '@/hooks/useLeads';
 import BranchTabs from '@/components/BranchTabs';
 import StatsCards from '@/components/StatsCards';
 import LeadsTable from '@/components/LeadsTable';
+import DownloadButton from '@/components/common/DownloadButton';
 import type { SessionUser } from '@/src/types/auth';
+import { applyLeadFilter } from '@/src/lib/leads/filter';
+import { buildLeadExportColumns } from '@/src/lib/export/lead-columns';
+import { buildFilename, exportRows, type ExportFormat } from '@/src/lib/export/export';
 
 // Phase 2N performance fix: the inline assignment picker used to fetch
 // `/api/users/assignable?branch=X` lazily INSIDE every row's selector —
@@ -149,6 +153,25 @@ export default function LeadDashboardShell({ actor }: Props) {
     setActiveFilter((prev) => (prev === filter ? 'all' : filter));
   };
 
+  // ── Export ───────────────────────────────────────────────────────────────
+  // Exports EXACTLY the rows the user is looking at: the leads already scoped
+  // server-side to the actor's role/branch (via /api/leads), then narrowed by
+  // the active card-filter using the SAME helper the grid uses. No re-fetch —
+  // this serialises the in-memory `leads` array. Filename encodes the current
+  // dashboard + branch + date, e.g. meta-leads-sec-83-2026-05-29.xlsx.
+  const exportLeads = (format: ExportFormat) => {
+    const rows = applyLeadFilter(leads, activeFilter);
+    const columns = buildLeadExportColumns(headers, assignments);
+    const filename = buildFilename([
+      activeDashboard.name,
+      activeBranch?.name ?? '',
+      activeFilter === 'all' ? '' : FILTER_LABELS[activeFilter],
+    ]);
+    exportRows(rows, columns, filename, format);
+  };
+
+  const exportableCount = applyLeadFilter(leads, activeFilter).length;
+
   return (
     // Desktop (≥lg): rigid `flex-1 min-h-0` so the AG Grid region has a
     // bounded height and owns the only scroll. Mobile/tablet: grow with
@@ -247,11 +270,20 @@ export default function LeadDashboardShell({ actor }: Props) {
             </span>
           )}
         </div>
-        {error && (
-          <span className="shrink-0 rounded-lg border border-orange-100 bg-orange-50 px-3 py-1.5 text-xs text-[#EA580C]">
-            {error}
-          </span>
-        )}
+        <div className="flex shrink-0 items-center gap-2">
+          {error && (
+            <span className="rounded-lg border border-orange-100 bg-orange-50 px-3 py-1.5 text-xs text-[#EA580C]">
+              {error}
+            </span>
+          )}
+          {activeBranch && (
+            <DownloadButton
+              onExport={exportLeads}
+              rowCount={exportableCount}
+              disabled={loading}
+            />
+          )}
+        </div>
       </div>
 
       {/* ── Grid region ────────────────────────────────────────────────────────

@@ -16,6 +16,24 @@ import { ROLES, ROLE_LABELS } from '@/src/features/auth/constants';
 import { canCreateUser } from '@/src/lib/permissions';
 import { RoleBadge } from '@/components/dashboard/RoleBadge';
 import UserStatusBadge from './UserStatusBadge';
+import DownloadButton from '@/components/common/DownloadButton';
+import {
+  buildFilename,
+  exportRows,
+  type ExportColumn,
+  type ExportFormat,
+} from '@/src/lib/export/export';
+
+const USER_EXPORT_COLUMNS: ExportColumn<SessionUser>[] = [
+  { header: 'Name', value: (u) => u.name ?? '' },
+  { header: 'Email', value: (u) => u.email },
+  { header: 'Role', value: (u) => ROLE_LABELS[u.role] },
+  { header: 'Status', value: (u) => (u.is_active ? 'Active' : 'Inactive') },
+  {
+    header: 'Branches',
+    value: (u) => (u.allowed_branches.length === 0 ? 'All' : u.allowed_branches.join(', ')),
+  },
+];
 
 interface Props {
   users: SessionUser[];
@@ -58,6 +76,13 @@ export default function UsersTable({ users, currentUserId, actorRole, onEdit }: 
     });
   }, [users, search, roleFilter, statusFilter]);
 
+  // Exports the CURRENT filtered/searched list — exactly the rows rendered
+  // below. `users` was already RBAC-scoped server-side (GET /api/users uses
+  // canViewUser), so the export can only ever contain rows the actor may see.
+  const exportUsers = (format: ExportFormat) => {
+    exportRows(filtered, USER_EXPORT_COLUMNS, buildFilename(['users']), format);
+  };
+
   return (
     <div className="overflow-hidden rounded-xl border border-[#E2E8F0] bg-white shadow-sm">
       {/* Filter bar */}
@@ -93,6 +118,7 @@ export default function UsersTable({ users, currentUserId, actorRole, onEdit }: 
         <span className="ml-auto text-xs text-[#64748B]">
           {filtered.length} of {users.length}
         </span>
+        <DownloadButton onExport={exportUsers} rowCount={filtered.length} />
       </div>
 
       {/* Table — responsive: real table on md+, stacked card list on mobile */}
