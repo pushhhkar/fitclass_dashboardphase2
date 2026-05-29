@@ -56,6 +56,7 @@ export async function verifyJwtEdge(token: string): Promise<JwtVerifyResult> {
     const sub = payload.sub;
     const email = (payload as { email?: unknown }).email;
     const role = (payload as { role?: unknown }).role;
+    const pwdIatRaw = (payload as { pwd_iat?: unknown }).pwd_iat;
 
     if (
       typeof sub !== 'string' ||
@@ -65,10 +66,14 @@ export async function verifyJwtEdge(token: string): Promise<JwtVerifyResult> {
       return { valid: false, error: 'Token claims failed validation' };
     }
 
+    // The Edge gate only checks token validity/role, not the password
+    // watermark (that DB-bound check lives in the Node session resolver). A
+    // missing pwd_iat is tolerated here and defaults to 0.
     const verified: JwtPayload = {
       sub,
       email,
       role,
+      pwd_iat: typeof pwdIatRaw === 'number' ? pwdIatRaw : 0,
       iat: payload.iat,
       exp: payload.exp,
     };

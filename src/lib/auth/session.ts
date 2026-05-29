@@ -31,7 +31,15 @@ export async function getSessionToken(): Promise<string | null> {
 
 /**
  * Resolve the current session: verify the JWT, re-read the user from the DB,
- * reject if missing/inactive. Returns null for any failure (no throws).
+ * reject if missing/inactive OR if the token predates the user's most recent
+ * password change. Returns null for any failure (no throws).
+ *
+ * ── Password-rotation invalidation ──────────────────────────────────────────
+ * The token carries `pwd_iat` (epoch seconds of `password_changed_at` at sign
+ * time). If the row's CURRENT password_changed_at is newer, the token was
+ * issued against an old credential and is rejected. This is what makes an
+ * admin reset / self-service change invalidate every previously-issued token
+ * for that user — no server-side session store, no revocation list.
  */
 export async function getSessionFromRequest(): Promise<SessionUser | null> {
   const token = await getSessionToken();
@@ -42,6 +50,13 @@ export async function getSessionFromRequest(): Promise<SessionUser | null> {
 
   const user = await getUserById(verified.payload.sub);
   if (!user || !user.is_active) return null;
+
+  // Reject tokens older than the user's current password watermark.
+  // `password_changed_at` is a timestamptz string → epoch seconds.
+  const pwdChangedAtSec = Math.floor(
+    new Date(user.password_changed_at).getTime() / 1000,
+  );
+  if (verified.payload.pwd_iat < pwdChangedAtSec) return null;
 
   return toSessionUser(user);
 }

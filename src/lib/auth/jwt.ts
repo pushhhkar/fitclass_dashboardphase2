@@ -38,7 +38,7 @@ import {
 import type { JwtPayload, JwtVerifyResult, UserRole } from '@/src/types/auth';
 
 /** Claims we control when minting a token (registered claims are added by lib). */
-type SignableClaims = Pick<JwtPayload, 'sub' | 'email' | 'role'>;
+type SignableClaims = Pick<JwtPayload, 'sub' | 'email' | 'role' | 'pwd_iat'>;
 
 const ALGORITHM = 'HS256' as const;
 
@@ -66,7 +66,7 @@ function isUserRole(value: unknown): value is UserRole {
 export function signJwt(claims: SignableClaims): string {
   const { JWT_SECRET } = getServerEnv();
   return jwt.sign(
-    { email: claims.email, role: claims.role },
+    { email: claims.email, role: claims.role, pwd_iat: claims.pwd_iat },
     JWT_SECRET,
     { ...baseSignOptions, subject: claims.sub },
   );
@@ -90,11 +90,17 @@ export function verifyJwt(token: string): JwtVerifyResult {
     const d = decoded as JsonwebtokenPayload & {
       email?: unknown;
       role?: unknown;
+      pwd_iat?: unknown;
     };
 
     if (typeof d.sub !== 'string' || typeof d.email !== 'string' || !isUserRole(d.role)) {
       return { valid: false, error: 'Token claims failed validation' };
     }
+
+    // Legacy tokens (minted before pwd_iat existed) have no claim → treat as
+    // epoch 0 so the staleness check in the session resolver rejects them
+    // against the backfilled password_changed_at, forcing one clean re-login.
+    const pwdIat = typeof d.pwd_iat === 'number' ? d.pwd_iat : 0;
 
     return {
       valid: true,
@@ -102,6 +108,7 @@ export function verifyJwt(token: string): JwtVerifyResult {
         sub: d.sub,
         email: d.email,
         role: d.role,
+        pwd_iat: pwdIat,
         iat: d.iat,
         exp: d.exp,
       },

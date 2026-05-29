@@ -19,6 +19,7 @@ export function toSessionUser(row: DatabaseUser): SessionUser {
     name: row.name,
     allowed_branches: row.allowed_branches,
     is_active: row.is_active,
+    force_password_change: row.force_password_change,
   };
 }
 

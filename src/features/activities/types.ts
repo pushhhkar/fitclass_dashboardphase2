@@ -18,6 +18,8 @@ export const ACTIVITY_ACTIONS = [
   'user_deactivated',
   'user_reactivated',
   'user_password_reset',
+  'password_reset_by_admin',
+  'password_changed_self',
   'role_changed',
   'privilege_denied_attempt',
   // ── Lead operations (Phase 2E+) ───────────────────────────────────────────

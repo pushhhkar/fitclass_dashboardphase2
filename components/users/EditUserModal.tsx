@@ -5,8 +5,9 @@
  * safety guards (last-admin, self-demotion, self-deactivation) are enforced
  * server-side; this UI hides the corresponding controls when applicable.
  *
- * Reset password is a separate POST to /api/users/[id]/reset-password — kept
- * inside this modal so the admin doesn't navigate away mid-task.
+ * "Set password" opens the ResetPasswordModal (admin only) where the admin
+ * types the new password directly. The server bcrypt-hashes it, invalidates
+ * the target's sessions, and flags them to change it on next login.
  */
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -14,7 +15,7 @@ import type { SessionUser, UserRole } from '@/src/types/auth';
 import Modal from './Modal';
 import RoleSelector from './RoleSelector';
 import BranchMultiSelect from './BranchMultiSelect';
-import TemporaryPasswordPanel from './TemporaryPasswordPanel';
+import ResetPasswordModal from './ResetPasswordModal';
 
 interface Props {
   open: boolean;
@@ -38,9 +39,8 @@ export default function EditUserModal({
   const [role, setRole] = useState<UserRole>(user.role);
   const [allowedBranches, setAllowedBranches] = useState<string[]>(user.allowed_branches);
   const [pending, setPending] = useState(false);
-  const [resetting, setResetting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [resetPassword, setResetPassword] = useState<string | null>(null);
+  const [resetOpen, setResetOpen] = useState(false);
 
   useEffect(() => {
     setName(user.name ?? '');
@@ -49,11 +49,13 @@ export default function EditUserModal({
   }, [user]);
 
   const isSelf = user.id === currentUserId;
+  // Manual password-setting is admin-only (spec) and never on yourself —
+  // admins rotate their own password through the self-service change flow.
+  const canSetPassword = actorRole === 'admin' && !isSelf;
 
   const handleClose = () => {
-    if (pending || resetting) return;
+    if (pending) return;
     setError(null);
-    setResetPassword(null);
     onClose();
     router.refresh();
   };
@@ -108,43 +110,16 @@ export default function EditUserModal({
     if (ok) handleClose();
   };
 
-  const handleResetPassword = async () => {
-    setError(null);
-    setResetting(true);
-    try {
-      const res = await fetch(`/api/users/${user.id}/reset-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: '{}',
-      });
-      const data = (await res.json().catch(() => null)) as
-        | { temporaryPassword?: string; error?: string }
-        | null;
-      if (!res.ok || !data?.temporaryPassword) {
-        setError(data?.error ?? 'Failed to reset password.');
-        return;
-      }
-      setResetPassword(data.temporaryPassword);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Network error.');
-    } finally {
-      setResetting(false);
-    }
-  };
-
-  const locked = pending || resetting;
+  const locked = pending;
 
   return (
+   <>
     <Modal open={open} onClose={handleClose} title={`Edit ${user.email}`} locked={locked}>
       <form onSubmit={handleSave} className="flex flex-col gap-4" noValidate>
         {error && (
           <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
             {error}
           </div>
-        )}
-
-        {resetPassword && (
-          <TemporaryPasswordPanel password={resetPassword} email={user.email} />
         )}
 
         <div className="flex flex-col gap-1.5">
@@ -180,14 +155,16 @@ export default function EditUserModal({
 
         <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
           <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={handleResetPassword}
-              disabled={locked}
-              className="rounded-xl border border-[#E2E8F0] bg-white px-3 py-2 text-xs font-semibold text-[#475569] hover:bg-[#F8FAFC] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {resetting ? 'Resetting…' : 'Reset password'}
-            </button>
+            {canSetPassword && (
+              <button
+                type="button"
+                onClick={() => setResetOpen(true)}
+                disabled={locked}
+                className="rounded-xl border border-[#E2E8F0] bg-white px-3 py-2 text-xs font-semibold text-[#475569] hover:bg-[#F8FAFC] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Set password
+              </button>
+            )}
             {!isSelf && (
               user.is_active ? (
                 <button
@@ -234,5 +211,15 @@ export default function EditUserModal({
         </div>
       </form>
     </Modal>
+
+    {canSetPassword && (
+      <ResetPasswordModal
+        open={resetOpen}
+        onClose={() => setResetOpen(false)}
+        userId={user.id}
+        email={user.email}
+      />
+    )}
+   </>
   );
 }

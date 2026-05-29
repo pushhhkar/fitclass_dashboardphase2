@@ -29,6 +29,14 @@ export default async function DashboardLayout({ children }: Props) {
     redirect('/login?callbackUrl=%2Fdashboard');
   }
 
+  // Forced password change (admin reset / new account): the user is signed in
+  // but must pick their own password before reaching any dashboard surface.
+  // The change-password page lives OUTSIDE /dashboard so this redirect can't
+  // loop on itself.
+  if (session.force_password_change) {
+    redirect('/change-password');
+  }
+
   // ── Padding policy ─────────────────────────────────────────────────────────
   // `<main>` is intentionally PADDING-FREE. Each page owns its own gutter so
   // the shell composes cleanly with two kinds of children:

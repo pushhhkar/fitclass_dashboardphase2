@@ -36,6 +36,11 @@ export interface SessionUser {
    * for OTHER users surfaced via admin endpoints like GET /api/users.
    */
   is_active: boolean;
+  /**
+   * When true, the user must set a new password before reaching protected
+   * routes. Set by admin reset; cleared once the user chooses their own.
+   */
+  force_password_change: boolean;
 }
 
 /** Credentials submitted to the (future) login endpoint. */
@@ -54,6 +59,13 @@ export interface JwtPayload {
   sub: string;
   email: string;
   role: UserRole;
+  /**
+   * Password watermark — epoch SECONDS of `users.password_changed_at` at sign
+   * time. The session resolver rejects the token if the row's current
+   * password_changed_at is newer than this. This is what makes a password
+   * reset invalidate every previously-issued token.
+   */
+  pwd_iat: number;
   /** Issued-at (epoch seconds) — set by the signer. */
   iat?: number;
   /** Expiry (epoch seconds) — set by the signer. */

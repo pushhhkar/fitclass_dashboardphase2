@@ -76,6 +76,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     sub: user.id,
     email: user.email,
     role: user.role,
+    // Anchor the token to the current password epoch. A later reset bumps
+    // password_changed_at past this value → this token stops resolving.
+    pwd_iat: Math.floor(new Date(user.password_changed_at).getTime() / 1000),
   });
 
   const session = toSessionUser(user);

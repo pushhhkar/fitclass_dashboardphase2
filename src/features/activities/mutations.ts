@@ -186,6 +186,29 @@ export function logUserPasswordReset(
   });
 }
 
+/**
+ * An admin MANUALLY set another user's password (admin typed it, vs. the
+ * server auto-generating a temporary one). Records actor + target only — the
+ * password itself is NEVER part of the audit payload.
+ */
+export function logPasswordResetByAdmin(
+  actorId: string,
+  targetId: string,
+): Promise<void> {
+  return log('password_reset_by_admin', {
+    performedBy: actorId,
+    subjectUserId: targetId,
+  });
+}
+
+/** A user changed their OWN password via the self-service change flow. */
+export function logPasswordChangedSelf(userId: string): Promise<void> {
+  return log('password_changed_self', {
+    performedBy: userId,
+    subjectUserId: userId,
+  });
+}
+
 /** Explicit role-change event — emitted alongside user_updated when role differs. */
 export function logRoleChanged(
   actorId: string,

@@ -32,6 +32,15 @@ export interface DatabaseUser {
   role: UserRole;
   allowed_branches: string[];
   is_active: boolean;
+  /**
+   * Watermark for JWT invalidation. Each minted token embeds `pwd_iat` =
+   * epoch seconds of this value at sign time; the session resolver rejects
+   * tokens whose pwd_iat predates the current value. Bumped on every password
+   * change so old sessions die immediately.
+   */
+  password_changed_at: string;
+  /** When true, user must set a new password before reaching protected routes. */
+  force_password_change: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -44,6 +53,7 @@ export interface DatabaseUserInsert {
   role?: UserRole;
   allowed_branches?: string[];
   is_active?: boolean;
+  force_password_change?: boolean;
 }
 
 /** Patchable user columns (id/email/timestamps are not mass-assignable). */
@@ -53,6 +63,8 @@ export interface DatabaseUserUpdate {
   role?: UserRole;
   allowed_branches?: string[];
   is_active?: boolean;
+  password_changed_at?: string;
+  force_password_change?: boolean;
 }
 
 /** A row of public.assignments. lead_id is the canonical Sheets-row key. */
